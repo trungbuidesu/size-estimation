@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/views/permissions_screen/components/index.dart';
 
 class PermissionsScreen extends StatefulWidget {
@@ -34,7 +35,7 @@ class _PermissionsScreenStateWrapper extends State<PermissionsScreen> {
               ContinueButton(
         // Ví dụ: _allPermissionsGrantedNotifier là ValueNotifier<bool> của bạn
         isEnabledNotifier: _allGrantedNotifier,
-        nextRoute: '/onboarding-done',
+        nextRoute: '/${RouteNames.methods}',
         enabledLabel: 'TIẾP TỤC SỬ DỤNG', // Text khi đã cấp quyền
         disabledLabel: 'VUI LÒNG CẤP ĐỦ QUYỀN', // Text khi chưa cấp quyền
       )),

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/views/permissions_screen/index.dart';
 import 'package:size_estimation/views/splash_screen/index.dart';
+import 'package:size_estimation/views/methods_screen/index.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -19,6 +20,13 @@ final GoRouter appRouter = GoRouter(
       name: RouteNames.permissions,
       builder: (BuildContext context, GoRouterState state) {
         return const PermissionsScreen();
+      },
+    ),
+    GoRoute(
+      path: '/${RouteNames.methods}',
+      name: RouteNames.methods,
+      builder: (BuildContext context, GoRouterState state) {
+        return const MethodsScreen();
       },
     ),
     // GoRoute(
