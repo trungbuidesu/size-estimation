@@ -13,7 +13,7 @@ final GoRouter appRouter = GoRouter(
       path: '/',
       name: RouteNames.splash,
       builder: (BuildContext context, GoRouterState state) {
-        return const SplashScreen(); // Đây là Widget SplashScreen của bạn
+        return const SplashScreen();
       },
     ),
     GoRoute(
@@ -57,7 +57,7 @@ final GoRouter appRouter = GoRouter(
     // ),
   ],
   // Tùy chọn: Xử lý khi không tìm thấy đường dẫn (404)
-  errorBuilder: (context, state) => const ErrorScreen(), 
+  errorBuilder: (context, state) => const ErrorScreen(),
 );
 
 class ErrorScreen extends StatelessWidget {

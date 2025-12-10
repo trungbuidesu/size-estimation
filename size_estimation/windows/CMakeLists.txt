@@ -52,6 +52,11 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# === Native Photogrammetry ===
+# Build the native library located in native_src
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native_src" "native_photogrammetry")
+
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -86,6 +91,11 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Install the Photogrammetry shared library
+install(TARGETS photogrammetry
+  RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")

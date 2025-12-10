@@ -16,6 +16,12 @@ class CameraSettingsOverlay extends StatelessWidget {
   final int aspectRatioIndex; // 0 = Full, 1 = 4:3
   final ValueChanged<int> onAspectRatioChanged;
 
+  // Zoom properties
+  final double currentZoom;
+  final double minZoom;
+  final double maxZoom;
+  final ValueChanged<double> onZoomChanged;
+
   const CameraSettingsOverlay({
     super.key,
     required this.animation,
@@ -29,6 +35,10 @@ class CameraSettingsOverlay extends StatelessWidget {
     required this.onTimerChanged,
     required this.aspectRatioIndex,
     required this.onAspectRatioChanged,
+    required this.currentZoom,
+    required this.minZoom,
+    required this.maxZoom,
+    required this.onZoomChanged,
   });
 
   @override
@@ -109,6 +119,43 @@ class CameraSettingsOverlay extends StatelessWidget {
                                   onTapAction: () {
                                     if (!isFlashOn) onToggleFlash();
                                   },
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 24),
+
+                            // --- Zoom Setting (Moved from Bottom) ---
+                            _buildSettingRow(
+                              title: 'ZOOM',
+                              currentValue:
+                                  '${currentZoom.toStringAsFixed(1)}x',
+                              children: [
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderThemeData(
+                                      activeTrackColor: const Color(0xFFA8C7FA),
+                                      inactiveTrackColor: Colors.white24,
+                                      thumbColor: Colors.white,
+                                      overlayColor: const Color(0xFFA8C7FA)
+                                          .withOpacity(0.2),
+                                      trackHeight: 2,
+                                      disabledThumbColor: Colors
+                                          .grey, // Visual feedback for disabled
+                                      disabledActiveTrackColor:
+                                          Colors.grey.withOpacity(0.5),
+                                    ),
+                                    child: Slider(
+                                      value: currentZoom.clamp(
+                                          minZoom, maxZoom), // Safely clamp
+                                      min: minZoom,
+                                      max: maxZoom,
+                                      // Logic: If min == max, disable slider (return null)
+                                      onChanged: (minZoom < maxZoom)
+                                          ? onZoomChanged
+                                          : null,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),

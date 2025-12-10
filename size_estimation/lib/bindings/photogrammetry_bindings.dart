@@ -10,6 +10,11 @@ typedef EstimateHeightC = Double Function(
   Double focalLength,
   Double cx,
   Double cy,
+  Double sensorWidth,
+  Double sensorHeight,
+  Pointer<Double> distortionCoeffs,
+  Int32 numDistortionCoeffs,
+  Pointer<Utf8> boundingBoxesJson, // NEW: JSON string of bounding boxes
 );
 
 // Define the Dart function signature
@@ -20,6 +25,11 @@ typedef EstimateHeightDart = double Function(
   double focalLength,
   double cx,
   double cy,
+  double sensorWidth,
+  double sensorHeight,
+  Pointer<Double> distortionCoeffs,
+  int numDistortionCoeffs,
+  Pointer<Utf8> boundingBoxesJson, // NEW
 );
 
 class PhotogrammetryBindings {
@@ -58,6 +68,10 @@ class PhotogrammetryBindings {
     required double focalLength,
     required double cx,
     required double cy,
+    double sensorWidth = 0.0,
+    double sensorHeight = 0.0,
+    List<double> distortionCoefficients = const [],
+    String? boundingBoxesJson, // NEW: Optional bounding boxes
   }) {
     if (_estimateHeight == null) {
       initialize();
@@ -66,9 +80,23 @@ class PhotogrammetryBindings {
       }
     }
 
-    // allocate memory for the list of strings
+    // Allocate memory for image paths
     final pointerList = calloc<Pointer<Utf8>>(imagePaths.length);
     final List<Pointer<Utf8>> pointers = [];
+
+    // Allocate memory for distortion coefficients
+    final distortionPtr = calloc<Double>(distortionCoefficients.length);
+    for (int i = 0; i < distortionCoefficients.length; i++) {
+      distortionPtr[i] = distortionCoefficients[i];
+    }
+
+    // Allocate memory for bounding boxes JSON
+    final Pointer<Utf8> boxesPtr;
+    if (boundingBoxesJson != null) {
+      boxesPtr = boundingBoxesJson.toNativeUtf8();
+    } else {
+      boxesPtr = nullptr;
+    }
 
     try {
       for (int i = 0; i < imagePaths.length; i++) {
@@ -84,6 +112,11 @@ class PhotogrammetryBindings {
         focalLength,
         cx,
         cy,
+        sensorWidth,
+        sensorHeight,
+        distortionPtr,
+        distortionCoefficients.length,
+        boxesPtr, // NEW: Pass bounding boxes
       );
 
       return result;
@@ -93,6 +126,10 @@ class PhotogrammetryBindings {
         calloc.free(ptr);
       }
       calloc.free(pointerList);
+      calloc.free(distortionPtr);
+      if (boxesPtr != nullptr) {
+        calloc.free(boxesPtr);
+      }
     }
   }
 }

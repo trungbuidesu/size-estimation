@@ -13,6 +13,8 @@ dependencies:
   permission_handler: ^11.3.1
   camera: ^0.11.0+2
   ffi: ^2.1.4
+  sensors_plus: ^7.0.0
+  google_mlkit_object_detection: ^0.12.0
 
 dev_dependencies:
   flutter_test:

@@ -289,4 +289,3 @@ class _MethodsScreenState extends State<MethodsScreen> {
     );
   }
 }
-
