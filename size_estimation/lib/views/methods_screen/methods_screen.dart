@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+import 'package:size_estimation/constants/index.dart';
 
 class MethodsScreen extends StatefulWidget {
   const MethodsScreen({super.key});
@@ -54,10 +56,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
   }
 
   void _onSelectMultiImage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Chọn phương pháp dùng nhiều ảnh')),
-    );
-    // TODO: Điều hướng tới flow chụp/tải nhiều ảnh.
+    context.push('/${RouteNames.camera}');
   }
 
   void _onShowTutorial() {
