@@ -22,6 +22,14 @@ class _MethodsScreenState extends State<MethodsScreen> {
   bool _isCheckingSupport = false;
   bool _isArSupported = false;
   bool _useAdvancedCorrection = false;
+  bool _isCalibrationExpanded = false;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -310,6 +318,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        title: const Text('Chức năng chính'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -329,105 +338,245 @@ class _MethodsScreenState extends State<MethodsScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: SingleChildScrollView(
+      body: SingleChildScrollView(
+        controller: _scrollController,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Chọn phương pháp ước lượng',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 24,
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Đo kích thước vật thể',
+                  style: TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 500),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildMethodCard(
-                            context: context,
-                            title: _isCheckingSupport
-                                ? 'Đang kiểm tra ARCore...'
-                                : _isArSupported
-                                    ? 'Ước lượng bằng ARCore'
-                                    : 'ARCore không khả dụng',
-                            subtitle: _isCheckingSupport
-                                ? 'Đang xác thực khả năng hỗ trợ...'
-                                : _isArSupported
-                                    ? 'Thiết bị hỗ trợ. Đo trực tiếp.'
-                                    : 'Thiết bị không hỗ trợ. Hãy dùng ảnh.',
-                            icon: Icons.view_in_ar,
-                            onTap: (_isArSupported && !_isCheckingSupport)
-                                ? _onSelectArCore
-                                : null,
-                            isPrimary: _isArSupported,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildMethodCard(
-                            context: context,
-                            title: 'Ước lượng bằng nhiều ảnh',
-                            subtitle: 'Chụp nhiều góc độ để xử lý.',
-                            icon: Icons.photo_library_outlined,
-                            onTap: _onSelectMultiImage,
-                            isPrimary: false,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Flexible(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Flexible(
-                                        child: Text(
-                                          'Sử dụng hiệu chỉnh ảnh nâng cao',
-                                          style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w500),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      GestureDetector(
-                                        onTap: () {
-                                          showDialog(
-                                            context: context,
-                                            builder: (ctx) =>
-                                                const CalibrationDescDialog(),
-                                          );
-                                        },
-                                        child: const Icon(Icons.info_outline,
-                                            size: 18, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Switch(
-                                  value: _useAdvancedCorrection,
-                                  onChanged: _handleAdvancedSwitch,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                      color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                _buildMethodCard(
+                  context: context,
+                  title: _isCheckingSupport
+                      ? 'Đang kiểm tra ARCore...'
+                      : _isArSupported
+                          ? 'Ước lượng bằng ARCore'
+                          : 'ARCore không khả dụng',
+                  subtitle: _isCheckingSupport
+                      ? 'Đang xác thực khả năng hỗ trợ...'
+                      : _isArSupported
+                          ? 'Thiết bị hỗ trợ. Đo trực tiếp.'
+                          : 'Thiết bị không hỗ trợ. Hãy dùng ảnh.',
+                  icon: Icons.view_in_ar,
+                  onTap: (_isArSupported && !_isCheckingSupport)
+                      ? _onSelectArCore
+                      : null,
+                  onLongPress: _showArInfoSheet,
+                  cardColor: Theme.of(context)
+                      .colorScheme
+                      .primaryContainer
+                      .withOpacity(0.7),
+                  textColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(height: 16),
+                _buildMethodCard(
+                  context: context,
+                  title: 'Ước lượng bằng nhiều ảnh',
+                  subtitle: 'Chụp nhiều góc độ để xử lý.',
+                  icon: Icons.photo_library_outlined,
+                  onTap: _onSelectMultiImage,
+                  onLongPress: _showMultiImageInfoSheet,
+                  cardColor: Theme.of(context)
+                      .colorScheme
+                      .tertiaryContainer
+                      .withOpacity(0.7),
+                  textColor: Theme.of(context).colorScheme.onTertiaryContainer,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Flexible(
+                        child: Text(
+                          'Sử dụng hiệu chỉnh ảnh nâng cao',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
                       ),
-                    ),
+                      Switch(
+                        value: _useAdvancedCorrection,
+                        onChanged: _handleAdvancedSwitch,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Công cụ nâng cao',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                _buildCalibrationCard(context),
+                const SizedBox(height: 32),
+              ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCalibrationCard(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = colorScheme.secondaryContainer.withOpacity(0.7);
+    final onBackgroundColor = colorScheme.onSecondaryContainer;
+
+    return Card(
+      color: backgroundColor,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          LayoutBuilder(builder: (context, constraints) {
+            return InkWell(
+              onLongPress: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) =>
+                      const CalibrationDescDialog(onConfirm: null),
+                );
+              },
+              onTap: () {},
+              onTapUp: (details) {
+                final isRightSide =
+                    details.localPosition.dx > constraints.maxWidth - 56;
+
+                if (_isCalibrationExpanded) {
+                  setState(() => _isCalibrationExpanded = false);
+                } else {
+                  if (isRightSide) {
+                    setState(() => _isCalibrationExpanded = true);
+                    WidgetsBinding.instance.addPostFrameCallback((_) async {
+                      await Future.delayed(const Duration(milliseconds: 100));
+                      if (_scrollController.hasClients) {
+                        _scrollController.animateTo(
+                          _scrollController.position.maxScrollExtent,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                        );
+                      }
+                    });
+                  } else {
+                    _showCalibrationActionDialog(context);
+                  }
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.perm_data_setting_outlined,
+                        size: 32, color: onBackgroundColor),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        'Hiệu chỉnh ảnh nâng cao',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: onBackgroundColor,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      _isCalibrationExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      color: onBackgroundColor,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          if (_isCalibrationExpanded) ...[
+            Divider(color: onBackgroundColor.withOpacity(0.1), height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const CalibrationDisplayWidget(),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () => _showCalibrationActionDialog(context),
+                    icon: const Icon(Icons.animation),
+                    label: const Text('Hiệu chỉnh'),
+                  )
+                ],
+              ),
+            )
+          ]
+        ],
+      ),
+    );
+  }
+
+  void _showCalibrationActionDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => CalibrationDescDialog(
+        onConfirm: _checkAndConfirmCalibration,
+      ),
+    );
+  }
+
+  Future<void> _checkAndConfirmCalibration() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Keys for automatic calibration profile (distinct from 'calib_' for manual)
+    final requiredKeys = ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3'];
+
+    // Check if ALL keys exist and are not empty
+    bool hasAutoProfile = requiredKeys.every((key) {
+      final val = prefs.getString('auto_calib_$key');
+      return val != null && val.trim().isNotEmpty;
+    });
+
+    if (!mounted) return;
+
+    if (hasAutoProfile) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Xác nhận ghi đè"),
+          content: const Text(
+              "Đã tồn tại hồ sơ hiệu chỉnh tự động trước đó. Bạn có muốn thực hiện lại và ghi đè không?"),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text("Hủy")),
+            FilledButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _startCalibrationProcess();
+                },
+                child: const Text("Ghi đè & Bắt đầu")),
+          ],
+        ),
+      );
+    } else {
+      _startCalibrationProcess();
+    }
+  }
+
+  void _startCalibrationProcess() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Bắt đầu quy trình hiệu chỉnh... (TODO)")),
     );
   }
 
@@ -437,93 +586,106 @@ class _MethodsScreenState extends State<MethodsScreen> {
     required String subtitle,
     required IconData icon,
     required VoidCallback? onTap,
-    required bool isPrimary,
+    required VoidCallback? onLongPress,
+    required Color cardColor,
+    required Color textColor,
     Widget? child,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final backgroundColor = isPrimary
-        ? colorScheme.primaryContainer
-        : colorScheme.surfaceContainerHighest;
-    final onBackgroundColor = isPrimary
-        ? colorScheme.onPrimaryContainer
-        : colorScheme.onSurfaceVariant;
+    final isEnabled = onTap != null;
+    // Visually disable if not enabled
+    final effectiveBackgroundColor = isEnabled
+        ? cardColor
+        : Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withOpacity(0.5);
+    final effectiveTextColor = isEnabled
+        ? textColor
+        : Theme.of(context).colorScheme.onSurface.withOpacity(0.38);
 
-    return SizedBox(
-      height: 170, // Fixed height for consistency
-      child: Card(
-        color: backgroundColor,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: isPrimary
-              ? BorderSide.none
-              : BorderSide(color: colorScheme.outline.withOpacity(0.2)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          onLongPress: isPrimary ? _showArInfoSheet : _showMultiImageInfoSheet,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    final content = Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 32, color: effectiveTextColor),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(icon, size: 32, color: onBackgroundColor),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: onBackgroundColor,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            subtitle,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: onBackgroundColor.withOpacity(0.8),
-                            ),
-                          ),
-                        ],
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: effectiveTextColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: effectiveTextColor.withOpacity(0.8),
                       ),
                     ),
                   ],
                 ),
-                if (child != null) ...[
-                  const Spacer(),
-                  child,
-                ] else ...[
-                  const Spacer(),
-                  if (onTap == null)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        'Không khả dụng',
-                        style: TextStyle(
-                            color: onBackgroundColor.withOpacity(0.5),
-                            fontWeight: FontWeight.bold),
-                      ),
-                    )
-                  else
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Icon(Icons.arrow_forward,
-                          color: onBackgroundColor.withOpacity(0.5)),
-                    ),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
+          if (child != null) ...[
+            const Spacer(),
+            child,
+          ] else ...[
+            const Spacer(),
+            if (!isEnabled)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'Không khả dụng trên thiết bị này',
+                  style: TextStyle(
+                      color: effectiveTextColor.withOpacity(0.6),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12),
+                ),
+              )
+            else
+              Align(
+                alignment: Alignment.centerRight,
+                child: Icon(Icons.arrow_forward,
+                    color: effectiveTextColor.withOpacity(0.5)),
+              ),
+          ],
+        ],
+      ),
+    );
+
+    return SizedBox(
+      height: 170,
+      child: Card(
+        color: effectiveBackgroundColor,
+        elevation: isEnabled ? 2 : 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide.none,
         ),
+        clipBehavior: Clip.antiAlias,
+        child: isEnabled
+            ? InkWell(
+                onTap: onTap,
+                onLongPress: onLongPress,
+                child: content,
+              )
+            : GestureDetector(
+                onLongPress: onLongPress,
+                behavior: HitTestBehavior.opaque,
+                child: SizedBox.expand(child: content),
+              ),
       ),
     );
   }

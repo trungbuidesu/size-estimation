@@ -36,10 +36,9 @@ class _PermissionCheckerListState extends State<PermissionCheckerList> {
       return false; // Đang kiểm tra
     }
     // Chỉ cần tất cả đều là granted HOẶC limited
-    return _statuses.values.every((status) => 
-      status == PermissionStatus.granted || 
-      status == PermissionStatus.limited
-    );
+    return _statuses.values.every((status) =>
+        status == PermissionStatus.granted ||
+        status == PermissionStatus.limited);
   }
 
   Future<void> _refreshStatuses() async {
@@ -159,7 +158,8 @@ class _PermissionCheckerListState extends State<PermissionCheckerList> {
       child: Stack(
         children: [
           ListView.builder(
-            padding: const EdgeInsets.only(top: 16, bottom: 100), // Dành không gian cho nút
+            padding: const EdgeInsets.only(
+                top: 16, bottom: 100), // Dành không gian cho nút
             itemCount: requiredPermissions.length,
             itemBuilder: (context, index) {
               final item = requiredPermissions[index];

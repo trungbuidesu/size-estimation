@@ -11,10 +11,15 @@ import 'package:size_estimation/models/captured_image.dart';
 import 'package:size_estimation/models/bounding_box.dart';
 import 'package:size_estimation/services/photogrammetry_service.dart';
 import 'package:size_estimation/services/ml_kit_object_detection_service.dart';
+import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
 import 'package:size_estimation/utils/index.dart';
-import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/constants/index.dart';
+import 'package:size_estimation/views/camera_screen/components/estimation_mode_selector.dart';
+import 'package:size_estimation/constants/estimation_mode.dart';
+import 'package:size_estimation/models/estimation_mode.dart';
+import 'dart:math';
+import 'package:flutter/services.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -22,6 +27,8 @@ class CameraScreen extends StatefulWidget {
   @override
   State<CameraScreen> createState() => _CameraScreenState();
 }
+
+// ... (IsolateData and _isolateEntry helper classes remain the same) ...
 
 // Helper class for isolate data
 class IsolateData {
@@ -60,6 +67,13 @@ class _CameraScreenState extends State<CameraScreen>
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
   double? _lockedZoomLevel; // Locked zoom after first capture
+
+  // Mode Selector State
+  // final GlobalKey _captureButtonKey = GlobalKey(); // Removed
+  bool _isModeSelectorVisible = false;
+  Offset _dragStartPosition = Offset.zero;
+  Offset _currentDragPosition = Offset.zero;
+  final List<EstimationMode> _selectorModes = kEstimationModes;
 
   // Warning State
   Timer? _warningTimer;
@@ -874,42 +888,71 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         children: [
           // 1. Camera Preview
-          Align(
-            alignment: Alignment.center,
-            child: AspectRatio(
-              aspectRatio: aspectRatio,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (_capturedImages.length >= _requiredImages)
-                    Container(color: Colors.black)
-                  else if (_isInitialized && _controller != null)
-                    ClipRect(
-                      child: OverflowBox(
-                        alignment: Alignment.center,
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: MediaQuery.of(context).size.width,
-                            height: MediaQuery.of(context).size.width *
-                                _controller!.value.aspectRatio,
-                            child: CameraPreview(_controller!),
+          GestureDetector(
+            onLongPressStart: (details) {
+              // Trigger only near left edge (approx 50px)
+              if (details.globalPosition.dx < 60) {
+                setState(() {
+                  _dragStartPosition = details.globalPosition;
+                  _currentDragPosition = details.globalPosition;
+                  _isModeSelectorVisible = true;
+                });
+                HapticFeedback.mediumImpact();
+              }
+            },
+            onLongPressMoveUpdate: (details) {
+              if (_isModeSelectorVisible) {
+                setState(() {
+                  _currentDragPosition = details.globalPosition;
+                });
+              }
+            },
+            onLongPressEnd: (details) {
+              if (_isModeSelectorVisible) {
+                _handleModeSelection();
+                setState(() {
+                  _isModeSelectorVisible = false;
+                });
+              }
+            },
+            child: Align(
+              alignment: Alignment.center,
+              child: AspectRatio(
+                aspectRatio: aspectRatio,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_capturedImages.length >= _requiredImages)
+                      Container(color: Colors.black)
+                    else if (_isInitialized && _controller != null)
+                      ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.center,
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: MediaQuery.of(context).size.width,
+                              height: MediaQuery.of(context).size.width *
+                                  _controller!.value.aspectRatio,
+                              child: CameraPreview(_controller!),
+                            ),
                           ),
                         ),
+                      )
+                    else
+                      const Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.white)),
+                    if (_isInitialized)
+                      Positioned.fill(
+                        child: OverlapGuide(
+                          images: List.of(_capturedImages),
+                          requiredImages: _requiredImages,
+                          aspectRatio: aspectRatio,
+                        ),
                       ),
-                    )
-                  else
-                    const Center(
-                        child: CircularProgressIndicator(color: Colors.white)),
-                  if (_isInitialized)
-                    Positioned.fill(
-                      child: OverlapGuide(
-                        images: List.of(_capturedImages),
-                        requiredImages: _requiredImages,
-                        aspectRatio: aspectRatio,
-                      ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1223,9 +1266,48 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
             ),
+          // 9. Mode Selector Overlay
+          // 9. Mode Selector Overlay
+          // ignore: unnecessary_null_comparison
+          if (_isModeSelectorVisible && _dragStartPosition != null)
+            Positioned.fill(
+              child: EstimationModeSelector(
+                center: _dragStartPosition,
+                currentDragPosition: _currentDragPosition,
+                isVisible: _isModeSelectorVisible,
+                modes: _selectorModes,
+                onModeSelected: (index) {},
+              ),
+            ),
         ],
       ),
       // FAB Removed as per request
     );
+  }
+
+  void _handleModeSelection() {
+    final dx = _currentDragPosition.dx - _dragStartPosition.dx;
+    final dy = _currentDragPosition.dy - _dragStartPosition.dy;
+    final distance = sqrt(dx * dx + dy * dy);
+
+    if (distance > 30) {
+      double angle = atan2(dy, dx);
+      // Fan Logic: Right Facing (Center 0)
+      // Span 160 deg -> -80 to +80 deg (approx -1.4 rad to +1.4 rad)
+      const double totalSweep = 160 * (pi / 180);
+      const double startAngle = -totalSweep / 2;
+      final double segmentAngle = totalSweep / _selectorModes.length;
+
+      if (angle >= startAngle && angle <= startAngle + totalSweep) {
+        double relative = angle - startAngle;
+        int index = (relative / segmentAngle).floor();
+        if (index >= 0 && index < _selectorModes.length) {
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Đã chọn: ${_selectorModes[index].label}'),
+              duration: const Duration(milliseconds: 500)));
+        }
+      }
+    }
   }
 }

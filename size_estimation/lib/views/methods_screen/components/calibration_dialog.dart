@@ -2,7 +2,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 class CalibrationDescDialog extends StatelessWidget {
-  const CalibrationDescDialog({super.key});
+  final VoidCallback? onConfirm;
+
+  const CalibrationDescDialog({super.key, this.onConfirm});
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +41,10 @@ class CalibrationDescDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            Navigator.pop(context);
+            onConfirm?.call();
+          },
           child: const Text('Đã hiểu'),
         ),
       ],
