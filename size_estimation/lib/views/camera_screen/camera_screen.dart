@@ -14,6 +14,7 @@ import 'package:size_estimation/services/ml_kit_object_detection_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
 import 'package:size_estimation/utils/index.dart';
 import 'package:size_estimation/services/sensor_service.dart';
+import 'package:size_estimation/constants/index.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -864,22 +865,9 @@ class _CameraScreenState extends State<CameraScreen>
     _controller!.setZoomLevel(clampedZoom);
   }
 
-  double _getAspectRatioValue(int index) {
-    switch (index) {
-      case 0:
-        return 1.0; // 1:1
-      case 1:
-        return 3.0 / 4.0; // 3:4 (4:3 Portrait)
-      case 2:
-        return 9.0 / 16.0; // 9:16 (16:9 Portrait)
-      default:
-        return 9.0 / 16.0;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final double aspectRatio = _getAspectRatioValue(_aspectRatioIndex);
+    final double aspectRatio = CameraAspectRatios.getRatio(_aspectRatioIndex);
 
     return Scaffold(
       backgroundColor: Colors.black,

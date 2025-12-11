@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/views/camera_property/index.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:size_estimation/views/settings_screen/settings_screen.dart';
+import 'package:size_estimation/views/methods_screen/components/index.dart';
 
 class MethodsScreen extends StatefulWidget {
   const MethodsScreen({super.key});
@@ -205,6 +207,105 @@ class _MethodsScreenState extends State<MethodsScreen> {
     );
   }
 
+  Future<void> _handleAdvancedSwitch(bool value) async {
+    if (!value) {
+      setState(() => _useAdvancedCorrection = false);
+      return;
+    }
+
+    // Check for manual profile
+    final prefs = await SharedPreferences.getInstance();
+    final requiredKeys = ['fx', 'fy', 'cx', 'cy'];
+    bool isManualConfigured = requiredKeys.every((key) {
+      final val = prefs.getString('calib_$key');
+      return val != null && val.trim().isNotEmpty;
+    });
+
+    // Simulate checking for automatic profile
+    bool hasProfile = false;
+
+    if (!mounted) return;
+    _showCalibrationProfileDialog(hasProfile, isManualConfigured);
+  }
+
+  void _showCalibrationProfileDialog(bool hasProfile, bool isManualConfigured) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Chọn hồ sơ hiệu chỉnh'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Scrollbar(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Hồ sơ thủ công (User Manual)',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  const CalibrationDisplayWidget(),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: FilledButton.icon(
+                      onPressed: isManualConfigured
+                          ? () {
+                              Navigator.pop(ctx);
+                              setState(() => _useAdvancedCorrection = true);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Đã chọn hồ sơ thủ công')),
+                              );
+                            }
+                          : null,
+                      icon: isManualConfigured
+                          ? const Icon(Icons.check)
+                          : const Icon(Icons.warning_amber_rounded),
+                      label: Text(
+                          isManualConfigured
+                              ? "Sử dụng Profile này"
+                              : "Chưa thiết lập\n(Vào Cài đặt để nhập)",
+                          textAlign: TextAlign.center),
+                    ),
+                  ),
+                  const Divider(height: 32),
+                  const Text('Hồ sơ tự động (System)',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  if (hasProfile) ...[
+                    ListTile(
+                      title: const Text("Auto-Calibration 2024-12-10"),
+                      subtitle: const Text("RMS: 0.45 | Focal: 3050px"),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        setState(() => _useAdvancedCorrection = true);
+                      },
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    ),
+                  ] else
+                    const Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Text('Chưa có hồ sơ hiệu chỉnh nào khác.',
+                          style: TextStyle(
+                              color: Colors.grey, fontStyle: FontStyle.italic)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+            },
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -283,21 +384,36 @@ class _MethodsScreenState extends State<MethodsScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Flexible(
-                                  child: Text(
-                                    'Sử dụng hiệu chỉnh ảnh nâng cao',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500),
+                                Flexible(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Flexible(
+                                        child: Text(
+                                          'Sử dụng hiệu chỉnh ảnh nâng cao',
+                                          style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: () {
+                                          showDialog(
+                                            context: context,
+                                            builder: (ctx) =>
+                                                const CalibrationDescDialog(),
+                                          );
+                                        },
+                                        child: const Icon(Icons.info_outline,
+                                            size: 18, color: Colors.grey),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 Switch(
                                   value: _useAdvancedCorrection,
-                                  onChanged: (bool value) {
-                                    setState(() {
-                                      _useAdvancedCorrection = value;
-                                    });
-                                  },
+                                  onChanged: _handleAdvancedSwitch,
                                 ),
                               ],
                             ),
@@ -384,7 +500,6 @@ class _MethodsScreenState extends State<MethodsScreen> {
                 ),
                 if (child != null) ...[
                   const Spacer(),
-                  const Divider(),
                   child,
                 ] else ...[
                   const Spacer(),

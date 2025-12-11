@@ -106,6 +106,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: () => _showTimerPicker(index, _timerPresets[index]),
                   );
                 }),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Hiệu chỉnh nâng cao',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text('Nhập thông số thủ công',
+                          style: TextStyle(fontSize: 16)),
+                      SizedBox(height: 4),
+                      Text(
+                        'Cảnh báo: Việc nhập sai thông số có thể làm giảm đáng kể độ chính xác.',
+                        style: TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                      SizedBox(height: 12),
+                      CalibrationInputWidget(),
+                    ],
+                  ),
+                ),
                 const Divider(),
               ],
             ),
@@ -220,6 +249,256 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
         );
       },
+    );
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+}
+
+class CalibrationInputWidget extends StatefulWidget {
+  final bool readOnly;
+  const CalibrationInputWidget({super.key, this.readOnly = false});
+
+  @override
+  State<CalibrationInputWidget> createState() => _CalibrationInputWidgetState();
+}
+
+class _CalibrationInputWidgetState extends State<CalibrationInputWidget> {
+  final Map<String, TextEditingController> _controllers = {};
+  final List<String> _keys = [
+    'fx',
+    'fy',
+    'cx',
+    'cy',
+    'k1',
+    'k2',
+    'p1',
+    'p2',
+    'k3'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    for (var key in _keys) {
+      _controllers[key] = TextEditingController();
+    }
+    _loadValues();
+  }
+
+  Future<void> _loadValues() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (var key in _keys) {
+      final val = prefs.getString('calib_$key') ?? '';
+      _controllers[key]?.text = val;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveValue(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('calib_$key', value);
+  }
+
+  @override
+  void dispose() {
+    for (var c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildGroupHeader('Intrinsic Parameters'),
+        Row(
+          children: [
+            _buildInput('fx', 'Focal X'),
+            const SizedBox(width: 8),
+            _buildInput('fy', 'Focal Y'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _buildInput('cx', 'Principal X'),
+            const SizedBox(width: 8),
+            _buildInput('cy', 'Principal Y'),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _buildGroupHeader('Distortion Coefficients'),
+        Row(
+          children: [
+            _buildInput('k1', 'k1'),
+            const SizedBox(width: 8),
+            _buildInput('k2', 'k2'),
+            const SizedBox(width: 8),
+            _buildInput('k3', 'k3'),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _buildInput('p1', 'p1'),
+            const SizedBox(width: 8),
+            _buildInput('p2', 'p2'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGroupHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, top: 4),
+      child: Text(
+        title,
+        style: const TextStyle(
+            fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+      ),
+    );
+  }
+
+  Widget _buildInput(String key, String label) {
+    return Expanded(
+      child: TextField(
+        controller: _controllers[key],
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        style: const TextStyle(fontSize: 13),
+        readOnly: widget.readOnly,
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          border: widget.readOnly
+              ? const OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black12))
+              : const OutlineInputBorder(),
+          filled: widget.readOnly,
+          fillColor: widget.readOnly ? Colors.grey.withOpacity(0.05) : null,
+        ),
+        onChanged: (val) {
+          if (!widget.readOnly) _saveValue(key, val);
+        },
+      ),
+    );
+  }
+}
+
+class CalibrationDisplayWidget extends StatefulWidget {
+  const CalibrationDisplayWidget({super.key});
+
+  @override
+  State<CalibrationDisplayWidget> createState() =>
+      _CalibrationDisplayWidgetState();
+}
+
+class _CalibrationDisplayWidgetState extends State<CalibrationDisplayWidget> {
+  Map<String, String> _values = {};
+  final List<String> _keys = [
+    'fx',
+    'fy',
+    'cx',
+    'cy',
+    'k1',
+    'k2',
+    'p1',
+    'p2',
+    'k3'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadValues();
+  }
+
+  Future<void> _loadValues() async {
+    final prefs = await SharedPreferences.getInstance();
+    final newValues = <String, String>{};
+    for (var key in _keys) {
+      final val = prefs.getString('calib_$key');
+      newValues[key] = (val == null || val.trim().isEmpty) ? '-' : val;
+    }
+    if (mounted) setState(() => _values = newValues);
+  }
+
+  Widget _buildRow(String label, String key) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          Text(_values[key] ?? '-', style: const TextStyle(fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompact(String label, String key) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text("$label: ",
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        Text(_values[key] ?? '-', style: const TextStyle(fontSize: 13)),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_values.isEmpty)
+      return const SizedBox(
+          height: 100, child: Center(child: CircularProgressIndicator()));
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Intrinsic Parameters",
+              style: TextStyle(
+                  color: Colors.blueGrey,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          _buildRow("Focal Length X (fx):", 'fx'),
+          _buildRow("Focal Length Y (fy):", 'fy'),
+          _buildRow("Principal Point X (cx):", 'cx'),
+          _buildRow("Principal Point Y (cy):", 'cy'),
+          const Divider(height: 24),
+          const Text("Distortion Coefficients",
+              style: TextStyle(
+                  color: Colors.blueGrey,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 16, runSpacing: 8, children: [
+            _buildCompact("k1", 'k1'),
+            _buildCompact("k2", 'k2'),
+            _buildCompact("k3", 'k3'),
+            _buildCompact("p1", 'p1'),
+            _buildCompact("p2", 'p2'),
+          ])
+        ],
+      ),
     );
   }
 }

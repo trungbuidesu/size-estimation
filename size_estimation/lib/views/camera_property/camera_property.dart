@@ -77,6 +77,7 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ),
+        _buildScoreSection(),
         _buildPropertyTile(
           'Lens Intrinsic Calibration',
           _cameraProperties['LENS_INTRINSIC_CALIBRATION'],
@@ -281,6 +282,100 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  int _calculateScore() {
+    int score = 0;
+    // 1. Sensor & Spatial (Max 60)
+    // Check Depth/Capabilities
+    final caps = _cameraProperties['REQUEST_AVAILABLE_CAPABILITIES'].toString();
+    if (caps.contains('DEPTH_OUTPUT')) score += 20;
+    if (caps.contains('LOGICAL_MULTI_CAMERA')) score += 10;
+
+    // Check Resolution (Approximation from Active Array Size)
+    final activeArray =
+        _cameraProperties['SENSOR_INFO_ACTIVE_ARRAY_SIZE'].toString();
+    // Expected format: Rect(0, 0 - w, h) or similar string depending on platform impl.
+    // If just checking presence of data:
+    if (activeArray != 'null') score += 15;
+
+    // Check Calibration Data
+    if (_cameraProperties['LENS_INTRINSIC_CALIBRATION'] != null) score += 10;
+    if (_cameraProperties['LENS_RADIAL_DISTORTION'] != null) score += 5;
+
+    // 2. Processing (Max 25)
+    // Hardware Level (proxied by capabilities)
+    if (caps.contains('MANUAL_SENSOR')) score += 10;
+    if (caps.contains('RAW')) score += 5;
+    // Base speed score
+    score += 10;
+
+    // 3. Compatibility (Max 15)
+    score += 15; // Assume compatible if running app
+
+    return score.clamp(0, 100);
+  }
+
+  Widget _buildScoreSection() {
+    final score = _calculateScore();
+    Color scoreColor = Colors.red;
+    if (score >= 80)
+      scoreColor = Colors.green;
+    else if (score >= 50) scoreColor = Colors.orange;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        children: [
+          const Text(
+            'ĐIỂM HIỆU NĂNG (BETA)',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$score',
+                style: TextStyle(
+                  color: scoreColor,
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10, left: 4),
+                child: Text(
+                  '/ 100',
+                  style: TextStyle(color: Colors.white54, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            score >= 80
+                ? 'Tuyệt vời cho Photogrammetry'
+                : score >= 50
+                    ? 'Đủ điều kiện cơ bản'
+                    : 'Hạn chế tính năng',
+            style: TextStyle(color: scoreColor, fontWeight: FontWeight.w500),
+          ),
+        ],
       ),
     );
   }
