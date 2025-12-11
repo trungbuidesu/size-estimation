@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:size_estimation/constants/index.dart';
+import 'package:size_estimation/views/camera_property/index.dart';
+import 'package:size_estimation/views/settings_screen/settings_screen.dart';
 
 class MethodsScreen extends StatefulWidget {
   const MethodsScreen({super.key});
@@ -17,6 +19,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
       MethodChannel('com.example.size_estimation/arcore');
   bool _isCheckingSupport = false;
   bool _isArSupported = false;
+  bool _useAdvancedCorrection = false;
 
   @override
   void initState() {
@@ -176,111 +179,232 @@ class _MethodsScreenState extends State<MethodsScreen> {
     );
   }
 
+  void _showCameraProperties() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, controller) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SingleChildScrollView(
+                controller: controller, // Attach controller for dragging
+                child: const CameraPropertiesWidget(),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chọn phương pháp ước lượng'),
-        centerTitle: true,
-      ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _isCheckingSupport
-                              ? 'Đang kiểm tra thiết bị có hỗ trợ ARCore...'
-                              : _isArSupported
-                                  ? 'Thiết bị hỗ trợ ARCore. Bạn có thể dùng đo trực tiếp.'
-                                  : 'Thiết bị không hỗ trợ ARCore. Vui lòng dùng phương pháp ảnh.',
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.refresh),
-                        tooltip: 'Kiểm tra lại',
-                        onPressed: _isCheckingSupport ? null : _detectArSupport,
-                      ),
-                    ],
-                  ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Cài đặt',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const SettingsScreen(),
                 ),
-                const SizedBox(height: 24),
-                Expanded(
-                  child: Center(
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.perm_device_information),
+            tooltip: 'Thuộc tính Camera',
+            onPressed: _showCameraProperties,
+          ),
+        ],
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Chọn phương pháp ước lượng',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 500),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          GestureDetector(
-                            onLongPress: _showArInfoSheet,
-                            child: FilledButton.icon(
-                              icon: const Icon(Icons.view_in_ar, size: 24),
-                              onPressed: (_isArSupported && !_isCheckingSupport)
-                                  ? _onSelectArCore
-                                  : null,
-                              style: FilledButton.styleFrom(
-                                minimumSize: const Size.fromHeight(72),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                textStyle: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.w600),
-                              ),
-                              label: Text(
-                                _isCheckingSupport
-                                    ? 'Đang kiểm tra ARCore...'
-                                    : _isArSupported
-                                        ? 'Ước lượng bằng ARCore'
-                                        : 'ARCore không khả dụng',
-                              ),
-                            ),
+                          _buildMethodCard(
+                            context: context,
+                            title: _isCheckingSupport
+                                ? 'Đang kiểm tra ARCore...'
+                                : _isArSupported
+                                    ? 'Ước lượng bằng ARCore'
+                                    : 'ARCore không khả dụng',
+                            subtitle: _isCheckingSupport
+                                ? 'Đang xác thực khả năng hỗ trợ...'
+                                : _isArSupported
+                                    ? 'Thiết bị hỗ trợ. Đo trực tiếp.'
+                                    : 'Thiết bị không hỗ trợ. Hãy dùng ảnh.',
+                            icon: Icons.view_in_ar,
+                            onTap: (_isArSupported && !_isCheckingSupport)
+                                ? _onSelectArCore
+                                : null,
+                            isPrimary: _isArSupported,
                           ),
                           const SizedBox(height: 16),
-                          GestureDetector(
-                            onLongPress: _showMultiImageInfoSheet,
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.photo_library_outlined,
-                                  size: 24),
-                              onPressed: _onSelectMultiImage,
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(72),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                          _buildMethodCard(
+                            context: context,
+                            title: 'Ước lượng bằng nhiều ảnh',
+                            subtitle: 'Chụp nhiều góc độ để xử lý.',
+                            icon: Icons.photo_library_outlined,
+                            onTap: _onSelectMultiImage,
+                            isPrimary: false,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Flexible(
+                                  child: Text(
+                                    'Sử dụng hiệu chỉnh ảnh nâng cao',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500),
+                                  ),
                                 ),
-                                textStyle: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.w600),
-                              ),
-                              label: const Text('Ước lượng bằng nhiều ảnh'),
+                                Switch(
+                                  value: _useAdvancedCorrection,
+                                  onChanged: (bool value) {
+                                    setState(() {
+                                      _useAdvancedCorrection = value;
+                                    });
+                                  },
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMethodCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback? onTap,
+    required bool isPrimary,
+    Widget? child,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = isPrimary
+        ? colorScheme.primaryContainer
+        : colorScheme.surfaceContainerHighest;
+    final onBackgroundColor = isPrimary
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurfaceVariant;
+
+    return SizedBox(
+      height: 170, // Fixed height for consistency
+      child: Card(
+        color: backgroundColor,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: isPrimary
+              ? BorderSide.none
+              : BorderSide(color: colorScheme.outline.withOpacity(0.2)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: isPrimary ? _showArInfoSheet : _showMultiImageInfoSheet,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, size: 32, color: onBackgroundColor),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: onBackgroundColor,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: onBackgroundColor.withOpacity(0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
+                if (child != null) ...[
+                  const Spacer(),
+                  const Divider(),
+                  child,
+                ] else ...[
+                  const Spacer(),
+                  if (onTap == null)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'Không khả dụng',
+                        style: TextStyle(
+                            color: onBackgroundColor.withOpacity(0.5),
+                            fontWeight: FontWeight.bold),
+                      ),
+                    )
+                  else
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Icon(Icons.arrow_forward,
+                          color: onBackgroundColor.withOpacity(0.5)),
+                    ),
+                ],
               ],
             ),
           ),

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:size_estimation/models/camera_intrinsics.dart';
@@ -86,6 +87,7 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void initState() {
     super.initState();
+    _loadSettings();
     _initializeCamera();
     _sensorService.startListening(); // Added Sensor Listen
 
@@ -97,6 +99,24 @@ class _CameraScreenState extends State<CameraScreen>
       parent: _settingsAnimationController,
       curve: Curves.easeOutCubic,
     );
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _aspectRatioIndex = prefs.getInt('default_aspect_ratio') ?? 0;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading camera settings: $e');
+    }
+  }
+
+  Future<void> _saveAspectRatio(int index) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('default_aspect_ratio', index);
   }
 
   @override
@@ -1138,8 +1158,10 @@ class _CameraScreenState extends State<CameraScreen>
             timerDuration: _timerDuration,
             onTimerChanged: (val) => setState(() => _timerDuration = val),
             aspectRatioIndex: _aspectRatioIndex,
-            onAspectRatioChanged: (val) =>
-                setState(() => _aspectRatioIndex = val),
+            onAspectRatioChanged: (val) {
+              _saveAspectRatio(val);
+              setState(() => _aspectRatioIndex = val);
+            },
             currentZoom: _currentZoom,
             minZoom: _minZoom,
             maxZoom: _maxZoom,
