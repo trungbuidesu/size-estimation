@@ -10,6 +10,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   int _aspectRatioIndex = 1; // Default to 4:3 (Index 1) usually
+  List<int> _timerPresets = [3, 5, 10];
   bool _isLoading = true;
 
   @override
@@ -24,6 +25,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         setState(() {
           _aspectRatioIndex = prefs.getInt('default_aspect_ratio') ?? 1;
+          final List<String>? presets = prefs.getStringList('timer_presets');
+          if (presets != null && presets.length == 3) {
+            _timerPresets = presets.map((e) => int.tryParse(e) ?? 10).toList();
+          }
           _isLoading = false;
         });
       }
@@ -43,6 +48,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _aspectRatioIndex = index;
     });
+  }
+
+  Future<void> _saveTimerPreset(int slotIndex, int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _timerPresets[slotIndex] = value;
+    });
+    await prefs.setStringList(
+        'timer_presets', _timerPresets.map((e) => e.toString()).toList());
   }
 
   @override
@@ -72,6 +86,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () => _showRatioSelectionDialog(),
                 ),
+                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Bộ đếm giờ (Countdown)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                ...List.generate(3, (index) {
+                  return ListTile(
+                    title: Text('Mức ${index + 1}'),
+                    subtitle: Text('${_timerPresets[index]} giây'),
+                    trailing: const Icon(Icons.edit, size: 16),
+                    onTap: () => _showTimerPicker(index, _timerPresets[index]),
+                  );
+                }),
                 const Divider(),
               ],
             ),
@@ -135,6 +169,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showTimerPicker(int slotIndex, int currentValue) {
+    int selectedValue = currentValue;
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Chọn thời gian mức ${slotIndex + 1}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$selectedValue giây',
+                    style: const TextStyle(
+                        fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  Slider(
+                    value: selectedValue.toDouble(),
+                    min: 1,
+                    max: 10,
+                    divisions: 9,
+                    label: selectedValue.toString(),
+                    onChanged: (double value) {
+                      setDialogState(() {
+                        selectedValue = value.round();
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Hủy'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    _saveTimerPreset(slotIndex, selectedValue);
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Lưu'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

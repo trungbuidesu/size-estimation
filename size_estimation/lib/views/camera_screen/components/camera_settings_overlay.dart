@@ -13,6 +13,7 @@ class CameraSettingsOverlay extends StatelessWidget {
   // New properties
   final int timerDuration; // 0, 3, 10
   final ValueChanged<int> onTimerChanged;
+  final List<int> timerPresets;
   final int aspectRatioIndex; // 0 = Full, 1 = 4:3
   final ValueChanged<int> onAspectRatioChanged;
 
@@ -33,6 +34,7 @@ class CameraSettingsOverlay extends StatelessWidget {
     required this.settingsButtonKey,
     required this.timerDuration,
     required this.onTimerChanged,
+    required this.timerPresets,
     required this.aspectRatioIndex,
     required this.onAspectRatioChanged,
     required this.currentZoom,
@@ -168,26 +170,17 @@ class CameraSettingsOverlay extends StatelessWidget {
                               currentValue: timerDuration == 0
                                   ? 'Off'
                                   : '${timerDuration}s',
-                              children: [
-                                _buildOptionButton(
-                                  const Icon(Icons.timer_off_outlined,
-                                      size: 20),
-                                  isSelected: timerDuration == 0,
-                                  onTapAction: () => onTimerChanged(0),
-                                ),
-                                const SizedBox(width: 12),
-                                _buildCircleTextButton(
-                                  '3s',
-                                  isSelected: timerDuration == 3,
-                                  onTap: () => onTimerChanged(3),
-                                ),
-                                const SizedBox(width: 12),
-                                _buildCircleTextButton(
-                                  '10s',
-                                  isSelected: timerDuration == 10,
-                                  onTap: () => onTimerChanged(10),
-                                ),
-                              ],
+                              children: timerPresets.map((preset) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(left: 8),
+                                  child: _buildCircleTextButton(
+                                    '${preset}s',
+                                    isSelected: timerDuration == preset,
+                                    onTap: () => onTimerChanged(
+                                        timerDuration == preset ? 0 : preset),
+                                  ),
+                                );
+                              }).toList(),
                             ),
 
                             const SizedBox(height: 24),
@@ -195,22 +188,24 @@ class CameraSettingsOverlay extends StatelessWidget {
                             // --- Ratio Setting ---
                             _buildSettingRow(
                               title: 'RATIO',
-                              currentValue: aspectRatioIndex == 0
-                                  ? 'Full view'
-                                  : '4:3', // Or 16:9
+                              currentValue: _getRatioLabel(aspectRatioIndex),
                               children: [
-                                _buildOptionButton(
-                                  const Icon(Icons.crop_free,
-                                      size: 20), // Represents Full/Wide
+                                _buildCircleTextButton(
+                                  '1:1',
                                   isSelected: aspectRatioIndex == 0,
-                                  onTapAction: () => onAspectRatioChanged(0),
+                                  onTap: () => onAspectRatioChanged(0),
                                 ),
                                 const SizedBox(width: 12),
-                                _buildOptionButton(
-                                  const Icon(Icons.aspect_ratio,
-                                      size: 20), // Represents Crop/Standard
+                                _buildCircleTextButton(
+                                  '4:3',
                                   isSelected: aspectRatioIndex == 1,
-                                  onTapAction: () => onAspectRatioChanged(1),
+                                  onTap: () => onAspectRatioChanged(1),
+                                ),
+                                const SizedBox(width: 12),
+                                _buildCircleTextButton(
+                                  '16:9',
+                                  isSelected: aspectRatioIndex == 2,
+                                  onTap: () => onAspectRatioChanged(2),
                                 ),
                               ],
                             ),
@@ -331,5 +326,18 @@ class CameraSettingsOverlay extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _getRatioLabel(int index) {
+    switch (index) {
+      case 0:
+        return '1:1';
+      case 1:
+        return '4:3';
+      case 2:
+        return '16:9';
+      default:
+        return '4:3';
+    }
   }
 }

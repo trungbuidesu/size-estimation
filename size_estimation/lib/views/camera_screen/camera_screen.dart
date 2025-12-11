@@ -77,6 +77,10 @@ class _CameraScreenState extends State<CameraScreen>
   // Settings State
   int _timerDuration = 0;
   int _aspectRatioIndex = 0;
+  // Countdown State
+  int _countdownSeconds = 0;
+  bool _isCountingDown = false;
+  List<int> _timerPresets = [3, 5, 10]; // Presets
 
   late AnimationController _settingsAnimationController;
   late Animation<double> _settingsAnimation;
@@ -107,6 +111,10 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) {
         setState(() {
           _aspectRatioIndex = prefs.getInt('default_aspect_ratio') ?? 0;
+          final List<String>? presets = prefs.getStringList('timer_presets');
+          if (presets != null && presets.length == 3) {
+            _timerPresets = presets.map((e) => int.tryParse(e) ?? 10).toList();
+          }
         });
       }
     } catch (e) {
@@ -188,7 +196,8 @@ class _CameraScreenState extends State<CameraScreen>
     if (_controller == null ||
         !_controller!.value.isInitialized ||
         _isProcessing ||
-        _isCapturing) return;
+        _isCapturing ||
+        _isCountingDown) return;
 
     // Check if full
     if (_capturedImages.length >= _requiredImages) {
@@ -197,10 +206,23 @@ class _CameraScreenState extends State<CameraScreen>
             Text('Đã đủ số lượng ảnh. Vui lòng xóa bớt hoặc nhấn Hoàn tất.'),
         duration: Duration(seconds: 2),
       ));
-      // Also re-open the process sheet convenienty? Maybe not, just warn.
-      // Or open gallery review?
-      // User request: "khi chụp sẽ báo toast rằng ảnh đã đầy, xóa bớt để chụp thêm"
       return;
+    }
+
+    // Countdown Logic
+    if (_timerDuration > 0) {
+      setState(() {
+        _isCountingDown = true;
+        _countdownSeconds = _timerDuration;
+      });
+
+      while (_countdownSeconds > 0) {
+        await Future.delayed(const Duration(seconds: 1));
+        if (!mounted) return;
+        setState(() => _countdownSeconds--);
+      }
+
+      setState(() => _isCountingDown = false);
     }
 
     setState(() => _isCapturing = true);
@@ -871,7 +893,9 @@ class _CameraScreenState extends State<CameraScreen>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (_isInitialized && _controller != null)
+                  if (_capturedImages.length >= _requiredImages)
+                    Container(color: Colors.black)
+                  else if (_isInitialized && _controller != null)
                     ClipRect(
                       child: OverflowBox(
                         alignment: Alignment.center,
@@ -1157,6 +1181,7 @@ class _CameraScreenState extends State<CameraScreen>
             settingsButtonKey: _settingsButtonKey,
             timerDuration: _timerDuration,
             onTimerChanged: (val) => setState(() => _timerDuration = val),
+            timerPresets: _timerPresets,
             aspectRatioIndex: _aspectRatioIndex,
             onAspectRatioChanged: (val) {
               _saveAspectRatio(val);
@@ -1183,6 +1208,30 @@ class _CameraScreenState extends State<CameraScreen>
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white)),
                   ],
+                ),
+              ),
+            ),
+
+          // 8. Countdown Overlay
+          if (_isCountingDown)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black45,
+                child: Center(
+                  child: Text(
+                    '$_countdownSeconds',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 120,
+                      fontWeight: FontWeight.bold,
+                      shadows: [
+                        Shadow(
+                            color: Colors.black54,
+                            blurRadius: 10,
+                            offset: Offset(0, 4)),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
