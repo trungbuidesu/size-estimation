@@ -1293,8 +1293,8 @@ class _CameraScreenState extends State<CameraScreen>
     if (distance > 30) {
       double angle = atan2(dy, dx);
       // Fan Logic: Right Facing (Center 0)
-      // Span 160 deg -> -80 to +80 deg (approx -1.4 rad to +1.4 rad)
-      const double totalSweep = 160 * (pi / 180);
+      // Span 180 deg -> -90 to +90 deg
+      const double totalSweep = 180 * (pi / 180);
       const double startAngle = -totalSweep / 2;
       final double segmentAngle = totalSweep / _selectorModes.length;
 

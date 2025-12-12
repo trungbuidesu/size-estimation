@@ -30,8 +30,8 @@ class EstimationModeSelector extends StatelessWidget {
 
     // Fan Logic for Selection Index mapping to Scroll Progress
     // We want the list to scroll naturally as the user fans up/down (right side).
-    // Let's assume -120 to +120 degrees sweep to reduce sensitivity (wider range).
-    const double totalSweep = 240 * (pi / 180);
+    // Using 180 degrees (Semicircle) for balanced sensitivity.
+    const double totalSweep = 180 * (pi / 180);
     const double startAngle = -totalSweep / 2;
     final double segmentAngle = totalSweep / modes.length;
 
@@ -42,17 +42,37 @@ class EstimationModeSelector extends StatelessWidget {
       // Normalize angle relative to start
       double relative = angle - startAngle;
 
-      // Calculate scroll progress (float index)
-      // If angle < start, it clamps to specific range
-      scrollProgress = (relative / segmentAngle);
+      // Calculate raw scroll progress
+      // (relative / segmentAngle) can be negative or > length
+      double rawProgress = (relative / segmentAngle);
 
-      // Determine the hard integer index for logic
+      // Determine the logical selection (hard clamp for Logic)
       if (angle >= startAngle && angle <= startAngle + totalSweep) {
-        selectedIndex = scrollProgress.floor();
+        selectedIndex = rawProgress.floor().clamp(0, modes.length - 1);
+      } else {
+        // If outside angular bounds, we might still want to select the closest one logic-wise?
+        // Current CameraScreen logic only selects if inside bounds. We'll stick to that visually for 'selected' state.
+        selectedIndex = -1;
       }
 
-      // visual clamp
-      scrollProgress = scrollProgress.clamp(-0.5, modes.length - 0.5);
+      // Visual Scroll Progress with Rubber Banding / Soft Limits
+      // Instead of hard clamp, we dampen the overflow.
+      if (rawProgress < 0) {
+        // Overshoot top
+        // f(x) = x * 0.3 for x < 0
+        scrollProgress = rawProgress * 0.3;
+      } else if (rawProgress > modes.length) {
+        // Overshoot bottom
+        double excess = rawProgress - modes.length;
+        scrollProgress = modes.length + (excess * 0.3);
+      } else {
+        // Within bounds
+        scrollProgress = rawProgress;
+      }
+
+      // Still apply a visual maximum limit so it doesn't fly off screen completely if user circles around
+      // But keep it responsive.
+      scrollProgress = scrollProgress.clamp(-1.0, modes.length + 1.0);
     }
 
     return Stack(
