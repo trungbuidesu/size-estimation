@@ -10,12 +10,14 @@ import 'package:size_estimation/models/camera_intrinsics.dart';
 import 'package:size_estimation/models/captured_image.dart';
 import 'package:size_estimation/models/bounding_box.dart';
 import 'package:size_estimation/services/photogrammetry_service.dart';
-import 'package:size_estimation/services/ml_kit_object_detection_service.dart';
+import 'package:size_estimation/services/yolo_object_detection_service.dart';
 import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
 import 'package:size_estimation/utils/index.dart';
 import 'package:size_estimation/constants/index.dart';
+import 'package:size_estimation/constants/image_quality_threshold.dart';
 import 'package:size_estimation/views/camera_screen/components/estimation_mode_selector.dart';
+import 'package:size_estimation/views/camera_screen/components/information.dart';
 import 'package:size_estimation/constants/estimation_mode.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
 import 'dart:math';
@@ -86,8 +88,8 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isProcessing = false; // Calculating height
   bool _isCapturing = false; // Taking photo
   final PhotogrammetryService _service = PhotogrammetryService();
-  final MLKitObjectDetectionService _objectDetectionService =
-      MLKitObjectDetectionService();
+  final YoloObjectDetectionService _objectDetectionService =
+      YoloObjectDetectionService();
 
   // Settings State
   int _timerDuration = 0;
@@ -96,6 +98,9 @@ class _CameraScreenState extends State<CameraScreen>
   int _countdownSeconds = 0;
   bool _isCountingDown = false;
   List<int> _timerPresets = [3, 5, 10]; // Presets
+
+  StabilityMetrics? _latestStabilityMetrics; // Real-time metrics
+  StreamSubscription<StabilityMetrics>? _stabilitySub;
 
   late AnimationController _settingsAnimationController;
   late Animation<double> _settingsAnimation;
@@ -109,6 +114,15 @@ class _CameraScreenState extends State<CameraScreen>
     _loadSettings();
     _initializeCamera();
     _sensorService.startListening(); // Added Sensor Listen
+
+    _stabilitySub = _sensorService.stabilityStream.listen((metrics) {
+      if (mounted) {
+        // Only update if needed to avoid excessive rebuilds,
+        // but here we just store it. We don't setState() because
+        // StabilityIndicator listens to stream too.
+        _latestStabilityMetrics = metrics;
+      }
+    });
 
     _settingsAnimationController = AnimationController(
       vsync: this,
@@ -246,18 +260,38 @@ class _CameraScreenState extends State<CameraScreen>
       final xFile = await _controller!.takePicture();
       final file = File(xFile.path);
 
-      // Validate Image Quality
-      final warnings = _validateImageQuality();
+      // Validate Stability before capturing
+      if (_latestStabilityMetrics != null) {
+        bool isStable = _latestStabilityMetrics!.stabilityScore >=
+            ImageQualityThresholds.minStabilityScore;
+        bool isLevel = _latestStabilityMetrics!.rollDegrees.abs() <=
+            ImageQualityThresholds.maxRollDeviation;
 
-      // Update warning state
-      if (warnings.isNotEmpty) {
-        if (!_hasShownAutoWarning) {
-          _hasShownAutoWarning = true;
-          Future.delayed(const Duration(milliseconds: 300), () {
-            if (mounted) _showWarningDetails(warnings);
-          });
+        if (!isStable) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Thiết bị đang rung. Vui lòng giữ chắc tay.'),
+            duration: Duration(milliseconds: 1000),
+            backgroundColor: Colors.orange,
+          ));
+          setState(() => _isCapturing = false);
+          return;
+        }
+
+        if (!isLevel) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Thiết bị bị nghiêng. Vui lòng giữ cân bằng.'),
+            duration: Duration(milliseconds: 1000),
+            backgroundColor: Colors.orange,
+          ));
+          setState(() => _isCapturing = false);
+          return;
         }
       }
+
+      final warnings = _validateImageQuality();
+
+      // Auto-warning dialog logic removed as requested
+      // We only store warnings for later review if needed
 
       setState(() {
         _capturedImages.add(CapturedImage(file: file, warnings: warnings));
@@ -305,14 +339,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     // 2. Stability / Speed Check (Proxy for Blur)
-    // If photos are taken too rapidly, user might be moving too fast or shaking.
-    if (_lastCaptureTime != null) {
-      final difference = now.difference(_lastCaptureTime!);
-      // < 2 seconds implies very fast movement for "moving camera" photogrammetry
-      if (difference.inMilliseconds < 2000) {
-        warnings.add('Chụp quá nhanh. Hãy di chuyển từ từ và giữ máy ổn định.');
-      }
-    }
+    // Removed "Capture too fast" warning as requested.
 
     // 3. Digital Zoom Warning
     // High digital zoom can reduce image quality and SfM accuracy
@@ -1026,6 +1053,12 @@ class _CameraScreenState extends State<CameraScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
+                          icon: const Icon(Icons.info_outline,
+                              color: Colors.white),
+                          onPressed: _showInformationScreen,
+                          tooltip: "Thông tin",
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.restart_alt,
                               color: Colors.white),
                           onPressed: _resetSession,
@@ -1309,5 +1342,19 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
     }
+  }
+
+  void _showInformationScreen() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) => const InformationScreen(),
+      ),
+    );
   }
 }

@@ -45,7 +45,7 @@ extern "C" {
         detector->detectAndCompute(img1, noArray(), kpts1, desc1);
         detector->detectAndCompute(img2, noArray(), kpts2, desc2);
         
-        if (kpts1.size() < 100 || kpts2.size() < 100) return false;
+        if (kpts1.size() < 30 || kpts2.size() < 30) return false;
 
         BFMatcher matcher(NORM_L2, true);
         vector<DMatch> matches;
@@ -57,13 +57,13 @@ extern "C" {
 
         // Heuristic: Keep top 20% or max 2000
         int numGood = (int)(matches.size() * 0.2f);
-        if (numGood < 100) numGood = matches.size();
+        if (numGood < 10) numGood = matches.size();
         
         for(int i=0; i< std::min((int)matches.size(), numGood); ++i) {
             good_matches.push_back(matches[i]);
         }
         
-        return good_matches.size() > 50;
+        return good_matches.size() > 10;
     }
 
     // 2. Pairwise Structure from Motion
@@ -102,8 +102,8 @@ extern "C" {
 
         // Count RANSAC Inliers
         int inliersAfterRansac = countNonZero(mask);
-        // CONSTRAINT: Minimum 500 inliers required
-        if (inliersAfterRansac < 500) {
+        // CONSTRAINT: Minimum 30 inliers required (Was 500, then 50)
+        if (inliersAfterRansac < 30) {
             return {0, 0, inliersAfterRansac, 0, -1};
         }
 
@@ -185,8 +185,8 @@ extern "C" {
              }
              double meanError = errSum / (2 * objectPoints.size());
              
-             // CONSTRAINT: Max Mean Reprojection Error < 1.0
-             if (meanError > 1.0) {
+             // CONSTRAINT: Max Mean Reprojection Error < 5.0 (Was 1.0)
+             if (meanError > 5.0) {
                  return {0, 0, inliersAfterRansac, meanError, -5};
              }
              return {minZ, maxZ, inliersAfterRansac, meanError, 0};

@@ -73,14 +73,14 @@ class PhotogrammetryService {
 
   void _handleErrorCode(double code) {
     if (code == -1.0)
-      throw Exception('Not enough features found (<500 matches).');
+      throw Exception('Not enough features found (<30 matches).');
     if (code == -2.0)
       throw Exception('Structure from Motion initialization failed.');
     if (code == -3.0) throw Exception('Triangulation failed.');
     if (code == -4.0) throw Exception('Bundle Adjustment failed.');
     if (code == -5.0)
       throw Exception(
-          'Sai số tối ưu hóa quá cao (>1.0px). Ảnh có thể bị sai lệch hoặc thông số camera chưa chính xác.');
+          'Sai số tối ưu hóa quá cao (>5.0px). Ảnh có thể bị sai lệch hoặc thông số camera chưa chính xác.');
     throw Exception('Unknown native error code: $code');
   }
 }

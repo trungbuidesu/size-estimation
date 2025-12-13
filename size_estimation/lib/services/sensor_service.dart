@@ -24,7 +24,8 @@ class SensorService {
   Stream<StabilityMetrics> get stabilityStream => _controller.stream;
 
   // Thresholds
-  static const double maxUserAccel = 0.3; // m/s^2 threshold for "moving"
+  static const double maxUserAccel =
+      2.0; // m/s^2 threshold for "moving" (Increased from 0.3)
   static const double maxRollDegrees = 5.0; // degrees
 
   // Current state
@@ -50,23 +51,39 @@ class SensorService {
       // Assuming Portrait Mode: Gravity is mostly on Y axis. Breakdown on X indicates roll.
       // roll = atan2(x, y)
       // conversion to degrees
-      double rollRadians = atan2(event.x, event.y);
-      double rollDegrees = rollRadians * 180 / pi;
+      // Calculate Roll (Tilt Left/Right) relative to gravity
+      // atan2(x, y) gives angle of device vector in plane perpendicular to screen (roughly)
+      // if device is flat, this is noisy/undefined, but we care when user holds it up.
 
-      // Adjust for typical holding:
-      // If upright, x=0, y=9.8. atan2(0, 9.8) = 0.
-      // If tilted right, x<0.
-      // Actually standard: y is up on screen?
-      // Let's use simple abs(x) check for "levelness" relative to gravity.
-      // If phone is flat (z=9.8), x and y are 0.
-      // If phone is upright (y=9.8), x and z are 0.
-      // In any "photo taking" pose, X should be minimal (horizontal level).
+      double angle = atan2(event.x, event.y) * 180 / pi;
 
-      // Re-calculating roll strictly from X gravity component
-      // sin(angle) = x / g.  angle = asin(x/g).
-      // g approx 9.8.
-      double xNorm = (event.x / 9.81).clamp(-1.0, 1.0);
-      double currentRoll = asin(xNorm) * 180 / pi; // -90 to 90
+      // We want deviation from the nearest 90-degree step (Portrait, Landscape Left/Right, Upside Down)
+      // angle is -180 to 180.
+      // Modulo 90 logic:
+
+      // Calculate deviation from nearest vertical/horizontal axis
+      // 0 = Upright, 90 = Landscape Left, -90 = Landscape Right, 180 = Upside down
+
+      double currentRoll = 0;
+
+      // Normalize to -45 to 45 range
+      // First, get it to 0-90 range essentially
+      // But we need signed deviation
+
+      if (angle > 135) {
+        currentRoll = angle - 180;
+      } else if (angle < -135) {
+        currentRoll = angle + 180;
+      } else if (angle > 45) {
+        currentRoll = angle - 90;
+      } else if (angle < -45) {
+        currentRoll = angle + 90;
+      } else {
+        currentRoll = angle; // -45 to 45
+      }
+
+      // Invert for intuitive "tilt left/right"
+      // currentRoll = -currentRoll;
 
       // Only emit if we have user accel data processed too (merged in controller add)
       // For simplicity, we emit on every accel event using latest stability

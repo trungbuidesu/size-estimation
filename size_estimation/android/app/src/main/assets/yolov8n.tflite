@@ -1,0 +1,5 @@
+This file is a placeholder. Please replace it with a valid yolov8n.tflite model file.
+You can download it from ultralytics export or TF Hub.
+Ensure the model input size is 640x640 and output includes class scores.
+Expected structure: [1, 84, 8400] (or similar transposed).
+If using metadata, ensure libraries support it. Default implementation assumes generic logic.

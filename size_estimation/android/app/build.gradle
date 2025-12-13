@@ -20,6 +20,10 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    aaptOptions {
+        noCompress "tflite"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -75,6 +79,9 @@ flutter {
     source = "../.."
 }
 
-dependencies {
+    dependencies {
     implementation "com.google.ar:core:1.45.0"
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
 }

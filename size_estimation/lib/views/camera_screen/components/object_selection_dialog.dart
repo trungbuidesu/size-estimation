@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:size_estimation/models/bounding_box.dart';
 import 'package:size_estimation/models/captured_image.dart';
+import 'dart:ui' as ui;
 
 /// Dialog for selecting target objects from detected bounding boxes
 class ObjectSelectionDialog extends StatefulWidget {
@@ -24,11 +25,47 @@ class _ObjectSelectionDialogState extends State<ObjectSelectionDialog> {
   int _currentImageIndex = 0;
   String? _targetObjectLabel;
 
+  // Image metadata for correct scaling
+  ui.Image? _currentImage;
+
   @override
   void initState() {
     super.initState();
+    _loadImage();
     // Auto-select most common high-confidence object
     _autoSelectCommonObject();
+  }
+
+  @override
+  void didUpdateWidget(ObjectSelectionDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.images != widget.images) {
+      _loadImage();
+    }
+  }
+
+  Future<void> _loadImage() async {
+    if (widget.images.isEmpty) return;
+
+    try {
+      final file = widget.images[_currentImageIndex].file;
+      final data = await file.readAsBytes();
+      final codec = await ui.instantiateImageCodec(data);
+      final frame = await codec.getNextFrame();
+      setState(() {
+        _currentImage = frame.image;
+      });
+    } catch (e) {
+      debugPrint("Error loading image for dialog: $e");
+    }
+  }
+
+  void _changeImage(int index) {
+    setState(() {
+      _currentImageIndex = index;
+      _currentImage = null; // Clear old image while loading
+    });
+    _loadImage();
   }
 
   void _autoSelectCommonObject() {
@@ -192,29 +229,48 @@ class _ObjectSelectionDialogState extends State<ObjectSelectionDialog> {
                 child: Stack(
                   children: [
                     // Image
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        widget.images[_currentImageIndex].file,
-                        fit: BoxFit.contain,
+                    Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          widget.images[_currentImageIndex].file,
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
 
                     // Bounding boxes overlay
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        return CustomPaint(
-                          size:
-                              Size(constraints.maxWidth, constraints.maxHeight),
-                          painter: BoundingBoxPainter(
-                            boxes: currentBoxes,
-                            selectedIds: _selectedBoxIds,
-                            getBoxId: _getBoxId,
-                            onBoxTap: _toggleBoxSelection,
-                          ),
-                        );
-                      },
-                    ),
+                    if (_currentImage != null)
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Calculate where the image is actually rendered
+                          final inputSize = Size(
+                              _currentImage!.width.toDouble(),
+                              _currentImage!.height.toDouble());
+                          final outputSize =
+                              Size(constraints.maxWidth, constraints.maxHeight);
+                          final fittedSizes = applyBoxFit(
+                              BoxFit.contain, inputSize, outputSize);
+
+                          // Centered rect
+                          final imageRect = Alignment.center.inscribe(
+                              fittedSizes.destination,
+                              Rect.fromLTWH(
+                                  0, 0, outputSize.width, outputSize.height));
+
+                          return CustomPaint(
+                            size: Size(
+                                constraints.maxWidth, constraints.maxHeight),
+                            painter: BoundingBoxPainter(
+                              boxes: currentBoxes,
+                              selectedIds: _selectedBoxIds,
+                              getBoxId: _getBoxId,
+                              onBoxTap: _toggleBoxSelection,
+                              imageRect: imageRect,
+                            ),
+                          );
+                        },
+                      ),
 
                     // Image counter
                     Positioned(
@@ -250,56 +306,65 @@ class _ObjectSelectionDialogState extends State<ObjectSelectionDialog> {
                   IconButton(
                     icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
                     onPressed: _currentImageIndex > 0
-                        ? () => setState(() => _currentImageIndex--)
+                        ? () => _changeImage(_currentImageIndex - 1)
                         : null,
                   ),
-                  const SizedBox(width: 20),
-                  ...List.generate(widget.images.length, (index) {
-                    final hasBoxes = widget.detectedBoxes
-                        .any((box) => box.imageIndex == index);
-                    final hasSelected = _getSelectedBoxes()
-                        .any((box) => box.imageIndex == index);
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(widget.images.length, (index) {
+                          final hasBoxes = widget.detectedBoxes
+                              .any((box) => box.imageIndex == index);
+                          final hasSelected = _getSelectedBoxes()
+                              .any((box) => box.imageIndex == index);
 
-                    return GestureDetector(
-                      onTap: () => setState(() => _currentImageIndex = index),
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: _currentImageIndex == index
-                              ? Colors.blue
-                              : (hasSelected
-                                  ? Colors.green
-                                  : (hasBoxes
-                                      ? Colors.white24
-                                      : Colors.white12)),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              color: _currentImageIndex == index || hasSelected
-                                  ? Colors.white
-                                  : Colors.white54,
-                              fontWeight: FontWeight.bold,
+                          return GestureDetector(
+                            onTap: () => _changeImage(index),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: _currentImageIndex == index
+                                    ? Colors.blue
+                                    : (hasSelected
+                                        ? Colors.green
+                                        : (hasBoxes
+                                            ? Colors.white24
+                                            : Colors.white12)),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${index + 1}',
+                                  style: TextStyle(
+                                    color: _currentImageIndex == index ||
+                                            hasSelected
+                                        ? Colors.white
+                                        : Colors.white54,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        }),
                       ),
-                    );
-                  }),
-                  const SizedBox(width: 20),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   IconButton(
                     icon: const Icon(Icons.arrow_forward_ios,
                         color: Colors.white),
                     onPressed: _currentImageIndex < widget.images.length - 1
-                        ? () => setState(() => _currentImageIndex++)
+                        ? () => _changeImage(_currentImageIndex + 1)
                         : null,
                   ),
                 ],
@@ -472,19 +537,31 @@ class BoundingBoxPainter extends CustomPainter {
   final Set<String> selectedIds;
   final String Function(BoundingBox) getBoxId;
   final Function(BoundingBox) onBoxTap;
+  final Rect imageRect; // Actual image drawing area
 
   BoundingBoxPainter({
     required this.boxes,
     required this.selectedIds,
     required this.getBoxId,
     required this.onBoxTap,
+    required this.imageRect,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Clip drawing to image area
+    canvas.clipRect(imageRect);
+
     for (var box in boxes) {
       final isSelected = selectedIds.contains(getBoxId(box));
-      final rect = box.toPixelRect(size);
+
+      // Calculate pixel rect relative to imageRect
+      final rect = Rect.fromLTWH(
+        imageRect.left + box.x * imageRect.width,
+        imageRect.top + box.y * imageRect.height,
+        box.width * imageRect.width,
+        box.height * imageRect.height,
+      );
 
       // Draw box
       final boxPaint = Paint()
@@ -571,9 +648,31 @@ class BoundingBoxPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant BoundingBoxPainter oldDelegate) {
-    return boxes != oldDelegate.boxes || selectedIds != oldDelegate.selectedIds;
+    return boxes != oldDelegate.boxes ||
+        selectedIds != oldDelegate.selectedIds ||
+        imageRect != oldDelegate.imageRect;
   }
 
   @override
-  bool hitTest(Offset position) => true;
+  bool hitTest(Offset position) {
+    // Basic hit test logic is a bit complex for custom painter click handling
+    // without extra work, but for now we rely on the upper layer gestures or
+    // implement simple check if needed.
+    // Since ListView handles clicks on the list below, checking here isn't primary
+    // unless we want clickable boxes on image directly.
+    // If we want direct tap on boxes:
+    for (var box in boxes) {
+      final rect = Rect.fromLTWH(
+        imageRect.left + box.x * imageRect.width,
+        imageRect.top + box.y * imageRect.height,
+        box.width * imageRect.width,
+        box.height * imageRect.height,
+      );
+      if (rect.contains(position)) {
+        onBoxTap(box);
+        return true;
+      }
+    }
+    return false;
+  }
 }

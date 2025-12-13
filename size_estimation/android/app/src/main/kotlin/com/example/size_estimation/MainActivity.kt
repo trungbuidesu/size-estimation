@@ -13,9 +13,17 @@ import androidx.annotation.NonNull
 
 class MainActivity: FlutterActivity() {
     private val channelName = "com.example.size_estimation/arcore"
+    private var yoloDetector: YoloDetector? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        
+        // Initialize detector
+        try {
+            yoloDetector = YoloDetector(this, "yolov8n.tflite", "labels.txt")
+        } catch (e: Exception) {
+             android.util.Log.e("Yolo", "Failed to init detector: ${e.message}")
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
@@ -24,6 +32,21 @@ class MainActivity: FlutterActivity() {
                         val availability = ArCoreApk.getInstance().checkAvailability(this)
                         val supported = availability.isSupported && !availability.isTransient
                         result.success(supported)
+                    }
+                    "detectObjects" -> {
+                        val imagePath = call.argument<String>("imagePath")
+                        if (imagePath != null && yoloDetector != null) {
+                            Thread {
+                                try {
+                                    val results = yoloDetector!!.detect(imagePath)
+                                    runOnUiThread { result.success(results) }
+                                } catch (e: Exception) {
+                                    runOnUiThread { result.error("DETECTION_ERROR", e.message, null) }
+                                }
+                            }.start()
+                        } else {
+                            result.error("ERROR", "Invalid path or detector not ready", null)
+                        }
                     }
                     "getCameraProperties" -> {
                         try {
@@ -77,5 +100,10 @@ class MainActivity: FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+    
+    override fun onDestroy() {
+        yoloDetector?.close()
+        super.onDestroy()
     }
 }

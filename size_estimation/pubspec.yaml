@@ -14,7 +14,7 @@ dependencies:
   camera: ^0.11.0+2
   ffi: ^2.1.4
   sensors_plus: ^7.0.0
-  google_mlkit_object_detection: ^0.12.0
+
   shared_preferences: ^2.5.4
 
 dev_dependencies:
