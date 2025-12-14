@@ -1,10 +1,18 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:size_estimation/models/calibration_profile.dart';
 
 class CalibrationDescDialog extends StatelessWidget {
   final VoidCallback? onConfirm;
+  final VoidCallback? onSelectProfile;
+  final CalibrationProfile? selectedProfile;
 
-  const CalibrationDescDialog({super.key, this.onConfirm});
+  const CalibrationDescDialog({
+    super.key,
+    this.onConfirm,
+    this.onSelectProfile,
+    this.selectedProfile,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +31,52 @@ class CalibrationDescDialog extends StatelessWidget {
             height: 180,
             width: double.maxFinite,
             child: CalibrationAnimation(),
+          ),
+          const SizedBox(height: 16),
+          if (selectedProfile != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          selectedProfile!.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          'Source: ${selectedProfile!.source}',
+                          style:
+                              const TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          FilledButton.icon(
+            onPressed: onSelectProfile,
+            icon: const Icon(Icons.tune, size: 18),
+            label: Text(
+                selectedProfile == null ? 'Select Profile' : 'Change Profile'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(double.infinity, 40),
+            ),
           ),
           const SizedBox(height: 16),
           const Text(

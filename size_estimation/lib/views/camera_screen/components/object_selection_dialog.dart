@@ -8,12 +8,14 @@ class ObjectSelectionDialog extends StatefulWidget {
   final List<CapturedImage> images;
   final List<BoundingBox> detectedBoxes;
   final Function(List<BoundingBox>) onConfirm;
+  final bool enableEdgeSnapping;
 
   const ObjectSelectionDialog({
     super.key,
     required this.images,
     required this.detectedBoxes,
     required this.onConfirm,
+    this.enableEdgeSnapping = false,
   });
 
   @override
@@ -49,14 +51,49 @@ class _ObjectSelectionDialogState extends State<ObjectSelectionDialog> {
 
     try {
       final file = widget.images[_currentImageIndex].file;
-      final data = await file.readAsBytes();
-      final codec = await ui.instantiateImageCodec(data);
-      final frame = await codec.getNextFrame();
-      setState(() {
-        _currentImage = frame.image;
-      });
+      // Use FileImage to respect EXIF rotation
+      final imageProvider = FileImage(file);
+      final ImageStream stream =
+          imageProvider.resolve(const ImageConfiguration());
+      final ImageStreamListener listener = ImageStreamListener(
+        (ImageInfo info, bool synchronousCall) {
+          if (mounted) {
+            setState(() {
+              _currentImage = info.image;
+            });
+          }
+        },
+        onError: (dynamic exception, StackTrace? stackTrace) {
+          debugPrint("Error loading image: $exception");
+        },
+      );
+      stream.addListener(listener);
     } catch (e) {
       debugPrint("Error loading image for dialog: $e");
+    }
+  }
+
+  void _handleTapUp(
+      TapUpDetails details, Rect imageRect, List<BoundingBox> boxes) {
+    if (!imageRect.contains(details.localPosition)) return;
+
+    // Find clicked box
+    // Check in reverse order to prefer top-most boxes (if overlapping)
+    for (var box in boxes.reversed) {
+      final rect = Rect.fromLTWH(
+        imageRect.left + box.x * imageRect.width,
+        imageRect.top + box.y * imageRect.height,
+        box.width * imageRect.width,
+        box.height * imageRect.height,
+      );
+
+      // Expand touch area slightly for easier selection
+      final touchRect = rect.inflate(10.0);
+
+      if (touchRect.contains(details.localPosition)) {
+        _toggleBoxSelection(box);
+        return; // Handle one box per tap
+      }
     }
   }
 
@@ -258,15 +295,18 @@ class _ObjectSelectionDialogState extends State<ObjectSelectionDialog> {
                               Rect.fromLTWH(
                                   0, 0, outputSize.width, outputSize.height));
 
-                          return CustomPaint(
-                            size: Size(
-                                constraints.maxWidth, constraints.maxHeight),
-                            painter: BoundingBoxPainter(
-                              boxes: currentBoxes,
-                              selectedIds: _selectedBoxIds,
-                              getBoxId: _getBoxId,
-                              onBoxTap: _toggleBoxSelection,
-                              imageRect: imageRect,
+                          return GestureDetector(
+                            onTapUp: (details) =>
+                                _handleTapUp(details, imageRect, currentBoxes),
+                            child: CustomPaint(
+                              size: Size(
+                                  constraints.maxWidth, constraints.maxHeight),
+                              painter: BoundingBoxPainter(
+                                boxes: currentBoxes,
+                                selectedIds: _selectedBoxIds,
+                                getBoxId: _getBoxId,
+                                imageRect: imageRect,
+                              ),
                             ),
                           );
                         },
@@ -536,14 +576,12 @@ class BoundingBoxPainter extends CustomPainter {
   final List<BoundingBox> boxes;
   final Set<String> selectedIds;
   final String Function(BoundingBox) getBoxId;
-  final Function(BoundingBox) onBoxTap;
   final Rect imageRect; // Actual image drawing area
 
   BoundingBoxPainter({
     required this.boxes,
     required this.selectedIds,
     required this.getBoxId,
-    required this.onBoxTap,
     required this.imageRect,
   });
 
@@ -655,24 +693,6 @@ class BoundingBoxPainter extends CustomPainter {
 
   @override
   bool hitTest(Offset position) {
-    // Basic hit test logic is a bit complex for custom painter click handling
-    // without extra work, but for now we rely on the upper layer gestures or
-    // implement simple check if needed.
-    // Since ListView handles clicks on the list below, checking here isn't primary
-    // unless we want clickable boxes on image directly.
-    // If we want direct tap on boxes:
-    for (var box in boxes) {
-      final rect = Rect.fromLTWH(
-        imageRect.left + box.x * imageRect.width,
-        imageRect.top + box.y * imageRect.height,
-        box.width * imageRect.width,
-        box.height * imageRect.height,
-      );
-      if (rect.contains(position)) {
-        onBoxTap(box);
-        return true;
-      }
-    }
-    return false;
+    return false; // Interaction handled by parent GestureDetector
   }
 }

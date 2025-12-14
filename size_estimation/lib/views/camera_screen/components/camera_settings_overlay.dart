@@ -1,6 +1,8 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
+import 'package:size_estimation/models/researcher_config.dart';
+
 class CameraSettingsOverlay extends StatelessWidget {
   final Animation<double> animation;
   final bool isFlashOn;
@@ -23,6 +25,43 @@ class CameraSettingsOverlay extends StatelessWidget {
   final double maxZoom;
   final ValueChanged<double> onZoomChanged;
 
+  // Debug properties
+  final bool isDebugVisible;
+  final VoidCallback onToggleDebug;
+
+  // Researcher Config
+  final ResearcherConfig? researcherConfig;
+  final ValueChanged<ResearcherConfig>? onConfigChanged;
+
+  // Calibration actions
+  final VoidCallback? onShowKMatrix;
+  final VoidCallback? onShowIMU;
+  final VoidCallback? onCalibrationPlayground;
+
+  // Ground Plane Measurement
+  final bool? groundPlaneMode;
+  final ValueChanged<bool>? onGroundPlaneModeChanged;
+  final double? cameraHeightMeters;
+  final ValueChanged<double>? onCameraHeightChanged;
+
+  // Planar Object Measurement
+  final bool? planarObjectMode;
+  final ValueChanged<bool>? onPlanarObjectModeChanged;
+  final String? referenceObject;
+  final ValueChanged<String?>? onReferenceObjectChanged;
+
+  // Vertical Object Measurement
+  final bool? verticalObjectMode;
+  final ValueChanged<bool>? onVerticalObjectModeChanged;
+
+  // Advanced Processing
+  final bool? applyUndistortion;
+  final ValueChanged<bool>? onUndistortionChanged;
+  final bool? edgeSnapping;
+  final ValueChanged<bool>? onEdgeSnappingChanged;
+  final bool? multiFrameMode;
+  final ValueChanged<bool>? onMultiFrameModeChanged;
+
   const CameraSettingsOverlay({
     super.key,
     required this.animation,
@@ -41,6 +80,29 @@ class CameraSettingsOverlay extends StatelessWidget {
     required this.minZoom,
     required this.maxZoom,
     required this.onZoomChanged,
+    required this.isDebugVisible,
+    required this.onToggleDebug,
+    this.researcherConfig,
+    this.onConfigChanged,
+    this.onShowKMatrix,
+    this.onShowIMU,
+    this.onCalibrationPlayground,
+    this.groundPlaneMode,
+    this.onGroundPlaneModeChanged,
+    this.cameraHeightMeters,
+    this.onCameraHeightChanged,
+    this.planarObjectMode,
+    this.onPlanarObjectModeChanged,
+    this.referenceObject,
+    this.onReferenceObjectChanged,
+    this.verticalObjectMode,
+    this.onVerticalObjectModeChanged,
+    this.applyUndistortion,
+    this.onUndistortionChanged,
+    this.edgeSnapping,
+    this.onEdgeSnappingChanged,
+    this.multiFrameMode,
+    this.onMultiFrameModeChanged,
   });
 
   @override
@@ -85,7 +147,10 @@ class CameraSettingsOverlay extends StatelessWidget {
                     child: FadeTransition(
                       opacity: fadeAnimation,
                       child: Container(
-                        constraints: const BoxConstraints(maxWidth: 400),
+                        constraints: BoxConstraints(
+                          maxWidth: 400,
+                          maxHeight: MediaQuery.of(context).size.height * 0.85,
+                        ),
                         padding: const EdgeInsets.symmetric(
                             vertical: 24, horizontal: 20),
                         decoration: BoxDecoration(
@@ -99,119 +164,398 @@ class CameraSettingsOverlay extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // --- Flash Setting ---
-                            _buildSettingRow(
-                              title: 'FLASH',
-                              currentValue: isFlashOn ? 'On' : 'Off',
-                              children: [
-                                _buildOptionButton(
-                                  const Icon(Icons.flash_off, size: 20),
-                                  isSelected: !isFlashOn,
-                                  onTapAction: () {
-                                    if (isFlashOn) onToggleFlash();
-                                  },
-                                ),
-                                const SizedBox(width: 12),
-                                _buildOptionButton(
-                                  const Icon(Icons.flash_on, size: 20),
-                                  isSelected: isFlashOn,
-                                  onTapAction: () {
-                                    if (!isFlashOn) onToggleFlash();
-                                  },
-                                ),
-                              ],
-                            ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // --- Flash Setting ---
+                              _buildSettingRow(
+                                title: 'FLASH',
+                                currentValue: isFlashOn ? 'On' : 'Off',
+                                children: [
+                                  _buildOptionButton(
+                                    Icon(
+                                        isFlashOn
+                                            ? Icons.flash_on
+                                            : Icons.flash_off,
+                                        size: 20),
+                                    isSelected: isFlashOn,
+                                    onTapAction: onToggleFlash,
+                                  ),
+                                ],
+                              ),
 
-                            const SizedBox(height: 24),
+                              const SizedBox(height: 24),
 
-                            // --- Zoom Setting (Moved from Bottom) ---
-                            _buildSettingRow(
-                              title: 'ZOOM',
-                              currentValue:
-                                  '${currentZoom.toStringAsFixed(1)}x',
-                              children: [
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderThemeData(
-                                      activeTrackColor: const Color(0xFFA8C7FA),
-                                      inactiveTrackColor: Colors.white24,
-                                      thumbColor: Colors.white,
-                                      overlayColor: const Color(0xFFA8C7FA)
-                                          .withOpacity(0.2),
-                                      trackHeight: 2,
-                                      disabledThumbColor: Colors
-                                          .grey, // Visual feedback for disabled
-                                      disabledActiveTrackColor:
-                                          Colors.grey.withOpacity(0.5),
-                                    ),
-                                    child: Slider(
-                                      value: currentZoom.clamp(
-                                          minZoom, maxZoom), // Safely clamp
-                                      min: minZoom,
-                                      max: maxZoom,
-                                      // Logic: If min == max, disable slider (return null)
-                                      onChanged: (minZoom < maxZoom)
-                                          ? onZoomChanged
-                                          : null,
+                              // --- Zoom Setting (Moved from Bottom) ---
+                              _buildSettingRow(
+                                title: 'ZOOM',
+                                currentValue:
+                                    '${currentZoom.toStringAsFixed(1)}x',
+                                children: [
+                                  Expanded(
+                                    child: SliderTheme(
+                                      data: SliderThemeData(
+                                        activeTrackColor:
+                                            const Color(0xFFA8C7FA),
+                                        inactiveTrackColor: Colors.white24,
+                                        thumbColor: Colors.white,
+                                        overlayColor: const Color(0xFFA8C7FA)
+                                            .withOpacity(0.2),
+                                        trackHeight: 2,
+                                        disabledThumbColor: Colors
+                                            .grey, // Visual feedback for disabled
+                                        disabledActiveTrackColor:
+                                            Colors.grey.withOpacity(0.5),
+                                      ),
+                                      child: Slider(
+                                        value: currentZoom.clamp(
+                                            minZoom, maxZoom), // Safely clamp
+                                        min: minZoom,
+                                        max: maxZoom,
+                                        // Logic: If min == max, disable slider (return null)
+                                        onChanged: (minZoom < maxZoom)
+                                            ? onZoomChanged
+                                            : null,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              ),
 
-                            const SizedBox(height: 24),
+                              const SizedBox(height: 24),
 
-                            // --- Timer Setting ---
-                            _buildSettingRow(
-                              title: 'TIMER',
-                              currentValue: timerDuration == 0
-                                  ? 'Off'
-                                  : '${timerDuration}s',
-                              children: timerPresets.map((preset) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(left: 8),
-                                  child: _buildCircleTextButton(
-                                    '${preset}s',
-                                    isSelected: timerDuration == preset,
-                                    onTap: () => onTimerChanged(
-                                        timerDuration == preset ? 0 : preset),
+                              // --- Timer Setting ---
+                              _buildSettingRow(
+                                title: 'TIMER',
+                                currentValue: timerDuration == 0
+                                    ? 'Off'
+                                    : '${timerDuration}s',
+                                children: timerPresets.map((preset) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(left: 8),
+                                    child: _buildCircleTextButton(
+                                      '${preset}s',
+                                      isSelected: timerDuration == preset,
+                                      onTap: () => onTimerChanged(
+                                          timerDuration == preset ? 0 : preset),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // --- Ratio Setting ---
+                              _buildSettingRow(
+                                title: 'RATIO',
+                                currentValue: _getRatioLabel(aspectRatioIndex),
+                                children: [
+                                  _buildCircleTextButton(
+                                    '1:1',
+                                    isSelected: aspectRatioIndex == 0,
+                                    onTap: () => onAspectRatioChanged(0),
                                   ),
-                                );
-                              }).toList(),
-                            ),
+                                  const SizedBox(width: 12),
+                                  _buildCircleTextButton(
+                                    '4:3',
+                                    isSelected: aspectRatioIndex == 1,
+                                    onTap: () => onAspectRatioChanged(1),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  _buildCircleTextButton(
+                                    '16:9',
+                                    isSelected: aspectRatioIndex == 2,
+                                    onTap: () => onAspectRatioChanged(2),
+                                  ),
+                                ],
+                              ),
 
-                            const SizedBox(height: 24),
+                              const SizedBox(height: 24),
 
-                            // --- Ratio Setting ---
-                            _buildSettingRow(
-                              title: 'RATIO',
-                              currentValue: _getRatioLabel(aspectRatioIndex),
-                              children: [
-                                _buildCircleTextButton(
-                                  '1:1',
-                                  isSelected: aspectRatioIndex == 0,
-                                  onTap: () => onAspectRatioChanged(0),
-                                ),
-                                const SizedBox(width: 12),
-                                _buildCircleTextButton(
-                                  '4:3',
-                                  isSelected: aspectRatioIndex == 1,
-                                  onTap: () => onAspectRatioChanged(1),
-                                ),
-                                const SizedBox(width: 12),
-                                _buildCircleTextButton(
-                                  '16:9',
-                                  isSelected: aspectRatioIndex == 2,
-                                  onTap: () => onAspectRatioChanged(2),
-                                ),
-                              ],
-                            ),
+                              // --- Researcher/Debug Mode ---
+                              _buildSettingRow(
+                                title: 'ADVANCED',
+                                currentValue: isDebugVisible ? 'On' : 'Off',
+                                children: [
+                                  _buildOptionButton(
+                                    Icon(
+                                        isDebugVisible
+                                            ? Icons.science
+                                            : Icons.science_outlined,
+                                        size: 20),
+                                    isSelected: isDebugVisible,
+                                    onTapAction: onToggleDebug,
+                                  ),
+                                ],
+                              ),
 
-                            // No gear icon
-                          ],
+                              // Detailed Researcher Options
+                              if (isDebugVisible &&
+                                  researcherConfig != null) ...[
+                                const Divider(
+                                    height: 32, color: Colors.white24),
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text("RESEARCHER OPTIONS",
+                                      style: TextStyle(
+                                          color: Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10)),
+                                ),
+                                const SizedBox(height: 8),
+                                _buildResearcherSwitch(
+                                    "Show Grid", researcherConfig!.showGrid,
+                                    (v) {
+                                  researcherConfig!.showGrid = v;
+                                  onConfigChanged?.call(researcherConfig!);
+                                }),
+                                _buildResearcherSwitch(
+                                    "Show IMU", researcherConfig!.showImuInfo,
+                                    (v) {
+                                  researcherConfig!.showImuInfo = v;
+                                  onConfigChanged?.call(researcherConfig!);
+                                }),
+                                _buildResearcherSwitch("Undistort",
+                                    researcherConfig!.applyUndistortion, (v) {
+                                  researcherConfig!.applyUndistortion = v;
+                                  onConfigChanged?.call(researcherConfig!);
+                                }),
+                                _buildResearcherSwitch("Edge Snapping",
+                                    researcherConfig!.edgeBasedSnapping, (v) {
+                                  researcherConfig!.edgeBasedSnapping = v;
+                                  onConfigChanged?.call(researcherConfig!);
+                                }),
+
+                                const SizedBox(height: 16),
+                                const Divider(height: 1, color: Colors.white24),
+                                const SizedBox(height: 16),
+
+                                // Calibration Tools
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text("CALIBRATION TOOLS",
+                                      style: TextStyle(
+                                          color: Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10)),
+                                ),
+                                const SizedBox(height: 8),
+
+                                _buildActionButton(
+                                  "Show K Matrix",
+                                  Icons.grid_3x3,
+                                  onShowKMatrix,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildActionButton(
+                                  "Show IMU Orientation",
+                                  Icons.explore,
+                                  onShowIMU,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildActionButton(
+                                  "Calibration Playground",
+                                  Icons.tune,
+                                  onCalibrationPlayground,
+                                ),
+
+                                const SizedBox(height: 16),
+                                const Divider(height: 1, color: Colors.white24),
+                                const SizedBox(height: 16),
+
+                                // Ground Plane Measurement
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text("GROUND PLANE MEASUREMENT",
+                                      style: TextStyle(
+                                          color: Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10)),
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Ground Plane Mode Toggle
+                                if (groundPlaneMode != null &&
+                                    onGroundPlaneModeChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Ground Plane Mode", groundPlaneMode!,
+                                      (v) {
+                                    onGroundPlaneModeChanged!(v);
+                                  }),
+
+                                // Camera Height Input
+                                if (cameraHeightMeters != null &&
+                                    onCameraHeightChanged != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Row(
+                                      children: [
+                                        const Text(
+                                          "Camera Height:",
+                                          style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Slider(
+                                            value: cameraHeightMeters!,
+                                            min: 0.1,
+                                            max: 3.0,
+                                            divisions: 29,
+                                            label:
+                                                '${cameraHeightMeters!.toStringAsFixed(1)}m',
+                                            onChanged: onCameraHeightChanged,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${cameraHeightMeters!.toStringAsFixed(1)}m',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                const SizedBox(height: 16),
+                                const Divider(height: 1, color: Colors.white24),
+                                const SizedBox(height: 16),
+
+                                // Planar Object Measurement
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text("PLANAR OBJECT MEASUREMENT",
+                                      style: TextStyle(
+                                          color: Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10)),
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Planar Object Mode Toggle
+                                if (planarObjectMode != null &&
+                                    onPlanarObjectModeChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Planar Object Mode", planarObjectMode!,
+                                      (v) {
+                                    onPlanarObjectModeChanged!(v);
+                                  }),
+
+                                // Reference Object Selector
+                                if (referenceObject != null &&
+                                    onReferenceObjectChanged != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          "Reference Object:",
+                                          style: TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        DropdownButton<String?>(
+                                          value: referenceObject,
+                                          isExpanded: true,
+                                          dropdownColor:
+                                              const Color(0xFF181818),
+                                          style: const TextStyle(
+                                              color: Colors.white),
+                                          items: [
+                                            const DropdownMenuItem(
+                                              value: null,
+                                              child: Text('None (Auto-detect)'),
+                                            ),
+                                            ...[
+                                              'A4 Paper',
+                                              'A5 Paper',
+                                              'Letter Paper',
+                                              'Credit Card',
+                                              'iPhone 14',
+                                              'iPad'
+                                            ].map((ref) => DropdownMenuItem(
+                                                  value: ref,
+                                                  child: Text(ref),
+                                                )),
+                                          ],
+                                          onChanged: onReferenceObjectChanged,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                const SizedBox(height: 16),
+                                const Divider(height: 1, color: Colors.white24),
+                                const SizedBox(height: 16),
+
+                                // Vertical Object Measurement
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text("VERTICAL OBJECT MEASUREMENT",
+                                      style: TextStyle(
+                                          color: Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10)),
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Vertical Object Mode Toggle
+                                if (verticalObjectMode != null &&
+                                    onVerticalObjectModeChanged != null)
+                                  _buildResearcherSwitch("Vertical Object Mode",
+                                      verticalObjectMode!, (v) {
+                                    onVerticalObjectModeChanged!(v);
+                                  }),
+
+                                const SizedBox(height: 16),
+                                const Divider(height: 1, color: Colors.white24),
+                                const SizedBox(height: 16),
+
+                                // Advanced Processing
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text("ADVANCED PROCESSING",
+                                      style: TextStyle(
+                                          color: Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10)),
+                                ),
+                                const SizedBox(height: 8),
+
+                                if (applyUndistortion != null &&
+                                    onUndistortionChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Lens Undistortion", applyUndistortion!,
+                                      (v) {
+                                    onUndistortionChanged!(v);
+                                  }),
+
+                                if (edgeSnapping != null &&
+                                    onEdgeSnappingChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Edge Snapping", edgeSnapping!, (v) {
+                                    onEdgeSnappingChanged!(v);
+                                  }),
+
+                                if (multiFrameMode != null &&
+                                    onMultiFrameModeChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Multi-frame Averaging", multiFrameMode!,
+                                      (v) {
+                                    onMultiFrameModeChanged!(v);
+                                  }),
+                              ]
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -268,6 +612,63 @@ class CameraSettingsOverlay extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildResearcherSwitch(
+      String label, bool value, ValueChanged<bool> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500)),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: Colors.yellowAccent,
+            activeTrackColor: Colors.yellowAccent.withOpacity(0.4),
+            inactiveThumbColor: Colors.white70,
+            inactiveTrackColor: Colors.white12,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton(String label, IconData icon, VoidCallback? onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: Colors.white70),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: Colors.white54),
+          ],
+        ),
+      ),
     );
   }
 

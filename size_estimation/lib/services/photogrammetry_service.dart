@@ -19,6 +19,7 @@ class PhotogrammetryService {
     required double knownBaselineCm,
     required CameraIntrinsics intrinsics,
     List<BoundingBox>? selectedBoxes,
+    bool applyUndistortion = true,
   }) async {
     if (images.length < 2) {
       throw Exception('Need at least 2 images for photogrammetry.');
@@ -57,7 +58,8 @@ class PhotogrammetryService {
         cy: intrinsics.cy,
         sensorWidth: intrinsics.sensorWidth,
         sensorHeight: intrinsics.sensorHeight,
-        distortionCoefficients: intrinsics.distortionCoefficients,
+        distortionCoefficients:
+            applyUndistortion ? intrinsics.distortionCoefficients : [],
         boundingBoxesJson: boundingBoxesJson, // NEW: Pass bounding boxes
       );
 

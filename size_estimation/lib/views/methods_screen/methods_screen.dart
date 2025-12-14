@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/views/camera_property/index.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:size_estimation/views/settings_screen/settings_screen.dart';
 import 'package:size_estimation/views/methods_screen/components/index.dart';
+import 'package:size_estimation/models/calibration_profile.dart';
+import 'package:size_estimation/services/calibration_service.dart';
+import 'package:size_estimation/views/calibration_playground/profile_selection_dialog.dart';
 
 class MethodsScreen extends StatefulWidget {
   const MethodsScreen({super.key});
@@ -23,6 +25,8 @@ class _MethodsScreenState extends State<MethodsScreen> {
   bool _isArSupported = false;
   bool _useAdvancedCorrection = false;
   bool _isCalibrationExpanded = false;
+  CalibrationProfile? _selectedProfile;
+  final CalibrationService _calibrationService = CalibrationService();
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -35,6 +39,17 @@ class _MethodsScreenState extends State<MethodsScreen> {
   void initState() {
     super.initState();
     _detectArSupport();
+    _loadActiveProfile();
+  }
+
+  Future<void> _loadActiveProfile() async {
+    final profile = await _calibrationService.getActiveProfile();
+    if (profile != null && mounted) {
+      setState(() {
+        _selectedProfile = profile;
+        _useAdvancedCorrection = true;
+      });
+    }
   }
 
   Future<void> _detectArSupport() async {
@@ -68,8 +83,238 @@ class _MethodsScreenState extends State<MethodsScreen> {
     // TODO: Điều hướng tới flow ARCore thực tế.
   }
 
-  void _onSelectMultiImage() {
-    context.push('/${RouteNames.camera}');
+  Future<void> _onSelectMultiImage() async {
+    // Show loading indicator
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    String profileName = "Mặc định (Device Intrinsics)";
+    Map<String, String> params = {};
+    List<double>? distortion;
+
+    try {
+      if (_useAdvancedCorrection && _selectedProfile != null) {
+        profileName = _selectedProfile!.name;
+
+        params['fx'] = _selectedProfile!.fx.toString();
+        params['fy'] = _selectedProfile!.fy.toString();
+        params['cx'] = _selectedProfile!.cx.toString();
+        params['cy'] = _selectedProfile!.cy.toString();
+
+        if (_selectedProfile!.distortionCoefficients.isNotEmpty) {
+          distortion = _selectedProfile!.distortionCoefficients;
+        }
+      } else {
+        // Fetch from Camera2 API via MethodChannel
+        final Map<dynamic, dynamic> result = await _arChannel
+            .invokeMethod('getCameraProperties', {'cameraId': '0'});
+
+        final properties = result.cast<String, dynamic>();
+
+        // Parse LENS_INTRINSIC_CALIBRATION [fx, fy, cx, cy, s]
+        if (properties['LENS_INTRINSIC_CALIBRATION'] != null) {
+          var val = properties['LENS_INTRINSIC_CALIBRATION'];
+          List<dynamic> intrinsics = [];
+          if (val is List) {
+            intrinsics = val;
+          } else if (val is String) {
+            intrinsics = val
+                .replaceAll('[', '')
+                .replaceAll(']', '')
+                .split(',')
+                .map((e) => e.trim())
+                .toList();
+          }
+
+          if (intrinsics.length >= 5) {
+            params['fx'] = intrinsics[0].toString();
+            params['fy'] = intrinsics[1].toString();
+            params['cx'] = intrinsics[2].toString();
+            params['cy'] = intrinsics[3].toString();
+            params['s'] = intrinsics[4].toString();
+          }
+        }
+
+        // Parse LENS_RADIAL_DISTORTION [k1, k2, k3, k4, k5, k6]
+        if (properties['LENS_RADIAL_DISTORTION'] != null) {
+          var val = properties['LENS_RADIAL_DISTORTION'];
+          List<dynamic> rawDist = [];
+
+          if (val is List) {
+            rawDist = val;
+          } else if (val is String) {
+            rawDist = val
+                .replaceAll('[', '')
+                .replaceAll(']', '')
+                .split(',')
+                .map((e) => e.trim())
+                .toList();
+          }
+
+          try {
+            distortion = rawDist
+                .map((e) => double.tryParse(e.toString()) ?? 0.0)
+                .toList();
+          } catch (e) {
+            debugPrint("Error parsing distortion: $e");
+          }
+        }
+
+        if (params.isEmpty) {
+          params['Status'] = "Không thể đọc thông số từ Camera API";
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching params: $e");
+      params['Error'] = "Lỗi: ${e.toString()}";
+    } finally {
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.settings_input_component, color: Colors.blue),
+            SizedBox(width: 8),
+            Text("Kiểm tra thông số"),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _useAdvancedCorrection
+                      ? Colors.orange.withOpacity(0.1)
+                      : Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                      color:
+                          _useAdvancedCorrection ? Colors.orange : Colors.blue),
+                ),
+                child: Text(
+                  profileName,
+                  style: TextStyle(
+                    color: _useAdvancedCorrection
+                        ? Colors.orange[800]
+                        : Colors.blue[800],
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text("Intrinsics (Pinhole Model)",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Divider(height: 8),
+              if (params.containsKey('Error'))
+                Text(params['Error']!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12))
+              else if (params.containsKey('Status'))
+                Text(params['Status']!,
+                    style: const TextStyle(
+                        fontStyle: FontStyle.italic, fontSize: 12))
+              else ...[
+                _buildParamRow("Focal Length X (fx)", params['fx'] ?? 'N/A'),
+                _buildParamRow("Focal Length Y (fy)", params['fy'] ?? 'N/A'),
+                _buildParamRow("Principal Point X (cx)", params['cx'] ?? 'N/A'),
+                _buildParamRow("Principal Point Y (cy)", params['cy'] ?? 'N/A'),
+                if (params.containsKey('s'))
+                  _buildParamRow("Skew (s)", params['s'] ?? 'N/A'),
+              ],
+              if (distortion != null && distortion.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text("Distortion (Radial)",
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const Divider(height: 8),
+                Text(
+                  distortion.join(', '),
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 12,
+                      color: Colors.black87),
+                ),
+              ],
+              const SizedBox(height: 16),
+              const Text(
+                "Nhấn 'Bắt đầu' để sử dụng các thông số này.",
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Quay lại"),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.push('/${RouteNames.camera}');
+            },
+            icon: const Icon(Icons.camera_alt),
+            label: const Text("Bắt đầu"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParamRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12)),
+          Text(value,
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _selectProfile() async {
+    final selected = await showDialog<CalibrationProfile>(
+      context: context,
+      builder: (context) => ProfileSelectionDialog(
+        currentProfile: _selectedProfile,
+      ),
+    );
+
+    if (selected != null) {
+      await _calibrationService.setActiveProfile(selected.name);
+      setState(() {
+        _selectedProfile = selected;
+        _useAdvancedCorrection = true;
+      });
+    } else if (selected == null && _selectedProfile != null) {
+      // User cleared selection
+      await _calibrationService.clearActiveProfile();
+      setState(() {
+        _selectedProfile = null;
+        _useAdvancedCorrection = false;
+      });
+    }
   }
 
   void _onShowTutorial() {
@@ -217,101 +462,16 @@ class _MethodsScreenState extends State<MethodsScreen> {
 
   Future<void> _handleAdvancedSwitch(bool value) async {
     if (!value) {
-      setState(() => _useAdvancedCorrection = false);
+      await _calibrationService.clearActiveProfile();
+      setState(() {
+        _useAdvancedCorrection = false;
+        _selectedProfile = null;
+      });
       return;
     }
 
-    // Check for manual profile
-    final prefs = await SharedPreferences.getInstance();
-    final requiredKeys = ['fx', 'fy', 'cx', 'cy'];
-    bool isManualConfigured = requiredKeys.every((key) {
-      final val = prefs.getString('calib_$key');
-      return val != null && val.trim().isNotEmpty;
-    });
-
-    // Simulate checking for automatic profile
-    bool hasProfile = false;
-
-    if (!mounted) return;
-    _showCalibrationProfileDialog(hasProfile, isManualConfigured);
-  }
-
-  void _showCalibrationProfileDialog(bool hasProfile, bool isManualConfigured) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Chọn hồ sơ hiệu chỉnh'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Scrollbar(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Hồ sơ thủ công (User Manual)',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  const CalibrationDisplayWidget(),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: FilledButton.icon(
-                      onPressed: isManualConfigured
-                          ? () {
-                              Navigator.pop(ctx);
-                              setState(() => _useAdvancedCorrection = true);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Đã chọn hồ sơ thủ công')),
-                              );
-                            }
-                          : null,
-                      icon: isManualConfigured
-                          ? const Icon(Icons.check)
-                          : const Icon(Icons.warning_amber_rounded),
-                      label: Text(
-                          isManualConfigured
-                              ? "Sử dụng Profile này"
-                              : "Chưa thiết lập\n(Vào Cài đặt để nhập)",
-                          textAlign: TextAlign.center),
-                    ),
-                  ),
-                  const Divider(height: 32),
-                  const Text('Hồ sơ tự động (System)',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  if (hasProfile) ...[
-                    ListTile(
-                      title: const Text("Auto-Calibration 2024-12-10"),
-                      subtitle: const Text("RMS: 0.45 | Focal: 3050px"),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        setState(() => _useAdvancedCorrection = true);
-                      },
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    ),
-                  ] else
-                    const Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Text('Chưa có hồ sơ hiệu chỉnh nào khác.',
-                          style: TextStyle(
-                              color: Colors.grey, fontStyle: FontStyle.italic)),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-            },
-            child: const Text('Đóng'),
-          ),
-        ],
-      ),
-    );
+    // Show profile selection dialog
+    await _selectProfile();
   }
 
   @override
@@ -458,9 +618,11 @@ class _MethodsScreenState extends State<MethodsScreen> {
                     details.localPosition.dx > constraints.maxWidth - 56;
 
                 if (_isCalibrationExpanded) {
+                  // When expanded, collapse on any tap
                   setState(() => _isCalibrationExpanded = false);
                 } else {
                   if (isRightSide) {
+                    // Tap on expand icon - expand to show settings
                     setState(() => _isCalibrationExpanded = true);
                     WidgetsBinding.instance.addPostFrameCallback((_) async {
                       await Future.delayed(const Duration(milliseconds: 100));
@@ -473,7 +635,8 @@ class _MethodsScreenState extends State<MethodsScreen> {
                       }
                     });
                   } else {
-                    _showCalibrationActionDialog(context);
+                    // Tap on main area - go to Calibration Playground
+                    context.push('/calibration-playground');
                   }
                 }
               },
@@ -512,12 +675,63 @@ class _MethodsScreenState extends State<MethodsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Switch to enable/disable Advanced Correction
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Use Advanced Correction',
+                              style: TextStyle(
+                                color: onBackgroundColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            if (_selectedProfile != null)
+                              Text(
+                                'Profile: ${_selectedProfile!.name}',
+                                style: TextStyle(
+                                  color: onBackgroundColor.withOpacity(0.7),
+                                  fontSize: 12,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: _useAdvancedCorrection,
+                        onChanged: _handleAdvancedSwitch,
+                        activeColor: Colors.blue,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Button to select profile
+                  if (_useAdvancedCorrection)
+                    OutlinedButton.icon(
+                      onPressed: _selectProfile,
+                      icon: const Icon(Icons.folder_open, size: 18),
+                      label: Text(_selectedProfile == null
+                          ? 'Select Profile'
+                          : 'Change Profile'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: onBackgroundColor,
+                        side: BorderSide(
+                            color: onBackgroundColor.withOpacity(0.3)),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
                   const CalibrationDisplayWidget(),
                   const SizedBox(height: 12),
                   FilledButton.icon(
-                    onPressed: () => _showCalibrationActionDialog(context),
-                    icon: const Icon(Icons.animation),
-                    label: const Text('Hiệu chỉnh'),
+                    onPressed: () => context.push('/calibration-playground'),
+                    icon: const Icon(Icons.science),
+                    label: const Text('Calibration Playground'),
                   )
                 ],
               ),
@@ -525,58 +739,6 @@ class _MethodsScreenState extends State<MethodsScreen> {
           ]
         ],
       ),
-    );
-  }
-
-  void _showCalibrationActionDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => CalibrationDescDialog(
-        onConfirm: _checkAndConfirmCalibration,
-      ),
-    );
-  }
-
-  Future<void> _checkAndConfirmCalibration() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Keys for automatic calibration profile (distinct from 'calib_' for manual)
-    final requiredKeys = ['fx', 'fy', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3'];
-
-    // Check if ALL keys exist and are not empty
-    bool hasAutoProfile = requiredKeys.every((key) {
-      final val = prefs.getString('auto_calib_$key');
-      return val != null && val.trim().isNotEmpty;
-    });
-
-    if (!mounted) return;
-
-    if (hasAutoProfile) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text("Xác nhận ghi đè"),
-          content: const Text(
-              "Đã tồn tại hồ sơ hiệu chỉnh tự động trước đó. Bạn có muốn thực hiện lại và ghi đè không?"),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text("Hủy")),
-            FilledButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _startCalibrationProcess();
-                },
-                child: const Text("Ghi đè & Bắt đầu")),
-          ],
-        ),
-      );
-    } else {
-      _startCalibrationProcess();
-    }
-  }
-
-  void _startCalibrationProcess() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Bắt đầu quy trình hiệu chỉnh... (TODO)")),
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:size_estimation/views/permissions_screen/index.dart';
 import 'package:size_estimation/views/splash_screen/index.dart';
 import 'package:size_estimation/views/methods_screen/index.dart';
 import 'package:size_estimation/views/camera_screen/index.dart';
+import 'package:size_estimation/views/calibration_playground/calibration_playground_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -35,6 +36,13 @@ final GoRouter appRouter = GoRouter(
       name: RouteNames.camera,
       builder: (BuildContext context, GoRouterState state) {
         return const CameraScreen();
+      },
+    ),
+    GoRoute(
+      path: '/calibration-playground',
+      name: 'calibration-playground',
+      builder: (BuildContext context, GoRouterState state) {
+        return const CalibrationPlaygroundScreen();
       },
     ),
     // GoRoute(

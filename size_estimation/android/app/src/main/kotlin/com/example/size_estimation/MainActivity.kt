@@ -10,6 +10,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
 import androidx.annotation.NonNull
+import org.opencv.android.OpenCVLoader
 
 class MainActivity: FlutterActivity() {
     private val channelName = "com.example.size_estimation/arcore"
@@ -17,6 +18,13 @@ class MainActivity: FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        
+        // Initialize OpenCV
+        if (!OpenCVLoader.initDebug()) {
+            android.util.Log.e("OpenCV", "Failed to initialize OpenCV")
+        } else {
+            android.util.Log.d("OpenCV", "OpenCV initialized successfully")
+        }
         
         // Initialize detector
         try {
@@ -96,6 +104,72 @@ class MainActivity: FlutterActivity() {
                         } catch (e: Exception) {
                             result.error("CAMERA_ERROR", e.message, null)
                         }
+                    }
+                    "calibrateCamera" -> {
+                        val imagePaths = call.argument<List<String>>("imagePaths")
+                        val boardWidth = call.argument<Int>("boardWidth") ?: 9
+                        val boardHeight = call.argument<Int>("boardHeight") ?: 6
+                        val squareSize = call.argument<Double>("squareSize")?.toFloat() ?: 25.0f
+                        
+                        if (imagePaths == null || imagePaths.isEmpty()) {
+                            result.error("INVALID_ARGS", "Image paths required", null)
+                            return@setMethodCallHandler
+                        }
+                        
+                        Thread {
+                            try {
+                                val calibrationService = CameraCalibrationService()
+                                val calibResult = calibrationService.calibrateCamera(
+                                    imagePaths,
+                                    boardWidth,
+                                    boardHeight,
+                                    squareSize
+                                )
+                                
+                                val resultMap = hashMapOf<String, Any?>(
+                                    "success" to calibResult.success,
+                                    "fx" to calibResult.fx,
+                                    "fy" to calibResult.fy,
+                                    "cx" to calibResult.cx,
+                                    "cy" to calibResult.cy,
+                                    "distortionCoefficients" to calibResult.distortionCoefficients.toList(),
+                                    "rmsError" to calibResult.rmsError,
+                                    "errorMessage" to calibResult.errorMessage
+                                )
+                                
+                                runOnUiThread { result.success(resultMap) }
+                            } catch (e: Exception) {
+                                runOnUiThread { 
+                                    result.error("CALIBRATION_ERROR", e.message, null) 
+                                }
+                            }
+                        }.start()
+                    }
+                    "detectChessboard" -> {
+                        val imagePath = call.argument<String>("imagePath")
+                        val boardWidth = call.argument<Int>("boardWidth") ?: 9
+                        val boardHeight = call.argument<Int>("boardHeight") ?: 6
+                        
+                        if (imagePath == null) {
+                            result.error("INVALID_ARGS", "Image path required", null)
+                            return@setMethodCallHandler
+                        }
+                        
+                        Thread {
+                            try {
+                                val calibrationService = CameraCalibrationService()
+                                val found = calibrationService.detectChessboard(
+                                    imagePath,
+                                    boardWidth,
+                                    boardHeight
+                                )
+                                runOnUiThread { result.success(found) }
+                            } catch (e: Exception) {
+                                runOnUiThread { 
+                                    result.error("DETECTION_ERROR", e.message, null) 
+                                }
+                            }
+                        }.start()
                     }
                     else -> result.notImplemented()
                 }
