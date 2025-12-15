@@ -9,18 +9,14 @@ import 'package:go_router/go_router.dart';
 import 'package:size_estimation/models/camera_intrinsics.dart';
 import 'package:size_estimation/models/captured_image.dart';
 import 'package:size_estimation/models/bounding_box.dart';
+import 'package:size_estimation/models/estimation_mode.dart';
 import 'package:size_estimation/services/photogrammetry_service.dart';
-// import 'package:size_estimation/services/yolo_object_detection_service.dart';
 import 'package:size_estimation/services/mock_object_detection_service.dart';
 import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
 import 'package:size_estimation/utils/index.dart';
 import 'package:size_estimation/constants/index.dart';
-import 'package:size_estimation/constants/image_quality_threshold.dart';
-import 'package:size_estimation/views/camera_screen/components/estimation_mode_selector.dart';
 import 'package:size_estimation/views/camera_screen/components/information.dart';
-import 'package:size_estimation/constants/estimation_mode.dart';
-import 'package:size_estimation/models/estimation_mode.dart';
 import 'package:size_estimation/models/researcher_config.dart';
 import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
@@ -36,10 +32,11 @@ import 'package:size_estimation/services/vanishing_point_service.dart'; // Added
 import 'package:size_estimation/views/camera_screen/components/k_matrix_overlay.dart';
 import 'package:size_estimation/views/camera_screen/components/imu_overlay.dart';
 import 'package:size_estimation/views/camera_screen/components/math_details_overlay.dart'; // Added
-import 'package:size_estimation/views/camera_screen/components/mode_selector_overlay.dart'; // Added
+import 'package:size_estimation/views/camera_screen/components/estimation_mode_selector.dart'; // Changed from mode_selector_overlay.dart
 import 'package:size_estimation/views/camera_screen/components/ground_plane_selector.dart';
 import 'package:size_estimation/views/camera_screen/components/planar_object_selector.dart';
 import 'package:size_estimation/views/camera_screen/components/vertical_object_selector.dart';
+import 'package:size_estimation/views/camera_screen/components/mode_explanation_dialog.dart';
 import 'package:size_estimation/services/ground_plane_service.dart';
 import 'package:size_estimation/services/planar_object_service.dart';
 import 'package:size_estimation/services/vertical_object_service.dart';
@@ -101,13 +98,39 @@ class _CameraScreenState extends State<CameraScreen>
 
   // Mode Selector State
   bool _isModeSelectorVisible = false;
-  Offset _modeSelectorCenter = Offset.zero;
-  Offset _modeSelectorDragPos = Offset.zero;
-  final List<ModeItem> _selectorModes = [
-    const ModeItem(icon: Icons.landscape, label: "Ground"),
-    const ModeItem(icon: Icons.crop_square, label: "Planar"),
-    const ModeItem(icon: Icons.height, label: "Vertical"),
+  Offset _dragStartPosition = Offset.zero;
+  Offset _currentDragPosition = Offset.zero;
+  final List<EstimationMode> _selectorModes = [
+    const EstimationMode(
+      type: EstimationModeType.groundPlane,
+      icon: Icons.landscape,
+      label: "Ground Plane",
+      description: "Đo khoảng cách trên mặt phẳng ngang",
+    ),
+    const EstimationMode(
+      type: EstimationModeType.planarObject,
+      icon: Icons.crop_square,
+      label: "Planar Object",
+      description: "Đo kích thước vật phẳng với tham chiếu",
+    ),
+    const EstimationMode(
+      type: EstimationModeType.singleView,
+      icon: Icons.height,
+      label: "Vertical Object",
+      description: "Đo chiều cao vật thẳng đứng",
+    ),
+    const EstimationMode(
+      type: EstimationModeType.multiFrame,
+      icon: Icons.video_camera_back,
+      label: "Multi-frame",
+      description: "Đo từ nhiều frame để tăng độ chính xác",
+    ),
   ];
+
+  // Hover detection for mode explanation
+  Timer? _modeHoverTimer;
+  int? _hoveredModeIndex;
+  bool _showingModeExplanation = false;
 
   StreamSubscription? _imuSubscription;
   CalibrationProfile? _activeProfile; // Active calibration profile
@@ -146,16 +169,6 @@ class _CameraScreenState extends State<CameraScreen>
   double _currentZoom = 1.0;
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
-
-  // Mode Selector State
-  bool _isModeSelectorVisible = false;
-  Offset _modeSelectorCenter = Offset.zero;
-  Offset _modeSelectorDragPos = Offset.zero;
-  final List<ModeItem> _selectorModes = [
-    const ModeItem(icon: Icons.landscape, label: "Ground"),
-    const ModeItem(icon: Icons.crop_square, label: "Planar"),
-    const ModeItem(icon: Icons.height, label: "Vertical"),
-  ];
 
   // Warning State
   Timer? _warningTimer;
@@ -1078,53 +1091,99 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  void _handleModeDragEnd() {
-    // Duplicate logic from Overlay to determine selection
-    final dx = _modeSelectorDragPos.dx - _modeSelectorCenter.dx;
-    final dy = _modeSelectorDragPos.dy - _modeSelectorCenter.dy;
-    final distance = sqrt(dx * dx + dy * dy);
-    
-    if (distance > 40) { // innerRadius
-      double angle = atan2(dy, dx);
-      const double totalSweep = pi;
-      const double startAngle = -pi;
-      final int count = _selectorModes.length;
-      final double segmentAngle = totalSweep / count;
-      
-      double relativeAngle = angle - startAngle;
-       if (angle > 0) {
-         if (angle > pi / 2) relativeAngle = 0; 
-         else relativeAngle = totalSweep; 
-       }
-       
-       int idx = (relativeAngle / segmentAngle).floor();
-       if (idx < 0) idx = 0;
-       if (idx >= count) idx = count - 1;
-       
-       // Switch Mode
-       _switchMode(idx);
+  Future<void> _switchModeByType(EstimationModeType type) async {
+    switch (type) {
+      case EstimationModeType.groundPlane:
+        // Ground Plane Mode - need camera height
+        final height = await _showCameraHeightDialog();
+        if (height != null) {
+          setState(() {
+            _cameraHeightMeters = height;
+            _groundPlaneMode = true;
+            _planarObjectMode = false;
+            _verticalObjectMode = false;
+            _currentMeasurement = null;
+          });
+        }
+        break;
+
+      case EstimationModeType.planarObject:
+        setState(() {
+          _groundPlaneMode = false;
+          _planarObjectMode = true;
+          _verticalObjectMode = false;
+          _currentPlanarMeasurement = null;
+        });
+        break;
+
+      case EstimationModeType.singleView:
+        setState(() {
+          _groundPlaneMode = false;
+          _planarObjectMode = false;
+          _verticalObjectMode = true;
+          _currentVerticalMeasurement = null;
+        });
+        break;
+
+      case EstimationModeType.multiFrame:
+        // Multi-frame mode can be combined with other modes
+        // For now, treat it as vertical object mode
+        setState(() {
+          _groundPlaneMode = false;
+          _planarObjectMode = false;
+          _verticalObjectMode = true;
+          _currentVerticalMeasurement = null;
+        });
+        break;
     }
   }
-  
-  void _switchMode(int index) {
-    setState(() {
-      if (index == 0) {
-         _groundPlaneMode = true;
-         _planarObjectMode = false;
-         _verticalObjectMode = false;
-         _currentMeasurement = null;
-      } else if (index == 1) {
-         _groundPlaneMode = false;
-         _planarObjectMode = true;
-         _verticalObjectMode = false; 
-         _currentPlanarMeasurement = null;
-      } else if (index == 2) {
-         _groundPlaneMode = false;
-         _planarObjectMode = false;
-         _verticalObjectMode = true;
-         _currentVerticalMeasurement = null;
-      }
-    });
+
+  Future<double?> _showCameraHeightDialog() async {
+    double tempHeight = _cameraHeightMeters;
+    return showDialog<double>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Camera Height'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Set the height of the camera from the ground:'),
+              const SizedBox(height: 16),
+              Slider(
+                value: tempHeight,
+                min: 0.1,
+                max: 3.0,
+                divisions: 29,
+                label: '${tempHeight.toStringAsFixed(1)}m',
+                onChanged: (value) {
+                  setDialogState(() {
+                    tempHeight = value;
+                  });
+                },
+              ),
+              Text(
+                '${tempHeight.toStringAsFixed(1)} meters',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, tempHeight),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   vm.Vector2 _undistortPoint(vm.Vector2 point) {
@@ -1528,74 +1587,119 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         children: [
           // 1. Camera Preview
-          GestureDetector(
-            onLongPressStart: (details) {
-              // Trigger only near left edge (approx 50px)
-              if (details.globalPosition.dx < 60) {
-                setState(() {
-                  _dragStartPosition = details.globalPosition;
-                  _currentDragPosition = details.globalPosition;
-                  _isModeSelectorVisible = true;
-                });
-                HapticFeedback.mediumImpact();
-              }
-            },
-            onLongPressMoveUpdate: (details) {
-              if (_isModeSelectorVisible) {
-                setState(() {
-                  _currentDragPosition = details.globalPosition;
-                });
-              }
-            },
-            onLongPressEnd: (details) {
-              if (_isModeSelectorVisible) {
-                _handleModeSelection();
-                setState(() {
-                  _isModeSelectorVisible = false;
-                });
-              }
-            },
-            child: Align(
-              alignment: Alignment.center,
-              child: AspectRatio(
-                aspectRatio: aspectRatio,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (_capturedImages.length >= _requiredImages)
-                      Container(color: Colors.black)
-                    else if (_isInitialized && _controller != null)
-                      ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.center,
-                          child: FittedBox(
-                            fit: BoxFit.cover,
-                            child: SizedBox(
-                              width: MediaQuery.of(context).size.width,
-                              height: MediaQuery.of(context).size.width *
-                                  _controller!.value.aspectRatio,
-                              child: CameraPreview(_controller!),
+          IgnorePointer(
+            // Disable long-press gesture when in measurement mode
+            ignoring:
+                _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
+            child: GestureDetector(
+              onLongPressStart: (details) {
+                // Trigger only near left edge (approx 50px)
+                if (details.globalPosition.dx < 60) {
+                  setState(() {
+                    _dragStartPosition = details.globalPosition;
+                    _currentDragPosition = details.globalPosition;
+                    _isModeSelectorVisible = true;
+                  });
+                  HapticFeedback.mediumImpact();
+                }
+              },
+              onLongPressMoveUpdate: (details) {
+                if (_isModeSelectorVisible && !_showingModeExplanation) {
+                  setState(() {
+                    _currentDragPosition = details.globalPosition;
+                  });
+
+                  // Detect which mode is being hovered
+                  final dx = details.globalPosition.dx - _dragStartPosition.dx;
+                  final dy = details.globalPosition.dy - _dragStartPosition.dy;
+                  final distance = sqrt(dx * dx + dy * dy);
+
+                  if (distance > 30) {
+                    double angle = atan2(dy, dx);
+                    const double totalSweep = 180 * (pi / 180);
+                    const double startAngle = -totalSweep / 2;
+                    final double segmentAngle =
+                        totalSweep / _selectorModes.length;
+
+                    if (angle >= startAngle &&
+                        angle <= startAngle + totalSweep) {
+                      double relative = angle - startAngle;
+                      int index = (relative / segmentAngle).floor();
+                      if (index >= 0 && index < _selectorModes.length) {
+                        // Check if hovering on same mode
+                        if (_hoveredModeIndex != index) {
+                          // Cancel previous timer
+                          _modeHoverTimer?.cancel();
+                          _hoveredModeIndex = index;
+
+                          // Start new timer for explanation
+                          _modeHoverTimer =
+                              Timer(const Duration(milliseconds: 800), () {
+                            if (_hoveredModeIndex == index &&
+                                _isModeSelectorVisible) {
+                              _showModeExplanation(index);
+                            }
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              onLongPressEnd: (details) {
+                _modeHoverTimer?.cancel();
+                _hoveredModeIndex = null;
+
+                if (_isModeSelectorVisible && !_showingModeExplanation) {
+                  _handleModeSelection();
+                  setState(() {
+                    _isModeSelectorVisible = false;
+                  });
+                }
+              },
+              child: Align(
+                alignment: Alignment.center,
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_capturedImages.length >= _requiredImages)
+                        Container(color: Colors.black)
+                      else if (_isInitialized && _controller != null)
+                        ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.center,
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: MediaQuery.of(context).size.width,
+                                height: MediaQuery.of(context).size.width *
+                                    _controller!.value.aspectRatio,
+                                child: CameraPreview(_controller!),
+                              ),
                             ),
                           ),
+                        )
+                      else
+                        const Center(
+                            child:
+                                CircularProgressIndicator(color: Colors.white)),
+                      if (_isInitialized)
+                        Positioned.fill(
+                          child: OverlapGuide(
+                            images: List.of(_capturedImages),
+                            requiredImages: _requiredImages,
+                            aspectRatio: aspectRatio,
+                          ),
                         ),
-                      )
-                    else
-                      const Center(
+                      if (_isInitialized)
+                        Positioned.fill(
                           child:
-                              CircularProgressIndicator(color: Colors.white)),
-                    if (_isInitialized)
-                      Positioned.fill(
-                        child: OverlapGuide(
-                          images: List.of(_capturedImages),
-                          requiredImages: _requiredImages,
-                          aspectRatio: aspectRatio,
+                              GridOverlay(visible: _researcherConfig.showGrid),
                         ),
-                      ),
-                    if (_isInitialized)
-                      Positioned.fill(
-                        child: GridOverlay(visible: _researcherConfig.showGrid),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1633,70 +1737,75 @@ class _CameraScreenState extends State<CameraScreen>
             top: 50,
             left: 0,
             right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new,
-                          color: Colors.white),
-                      onPressed: () => context.pop(),
-                    ),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.max,
-                        children: [
-                          if (_researcherConfig
-                              .showImuInfo) // Controlled by Researcher Mode
-                            StreamBuilder<StabilityMetrics>(
-                                stream: _sensorService.stabilityStream,
-                                initialData: StabilityMetrics(
-                                    stabilityScore: 1.0,
-                                    isLevel: true,
-                                    rollDegrees: 0,
-                                    isStable: true),
-                                builder: (context, snapshot) {
-                                  if (!snapshot.hasData)
-                                    return const SizedBox(
-                                        height: 6, width: 100);
-                                  return SizedBox(
-                                      width: 120,
-                                      child: StabilityIndicator(
-                                          metrics: snapshot.data!));
-                                }),
-                        ],
+            child: IgnorePointer(
+              // Ignore pointer when in measurement mode to allow selector to receive touches
+              ignoring:
+                  _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new,
+                            color: Colors.white),
+                        onPressed: () => context.pop(),
                       ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.info_outline,
-                              color: Colors.white),
-                          onPressed: _showInformationScreen,
-                          tooltip: "Thông tin",
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            if (_researcherConfig
+                                .showImuInfo) // Controlled by Researcher Mode
+                              StreamBuilder<StabilityMetrics>(
+                                  stream: _sensorService.stabilityStream,
+                                  initialData: StabilityMetrics(
+                                      stabilityScore: 1.0,
+                                      isLevel: true,
+                                      rollDegrees: 0,
+                                      isStable: true),
+                                  builder: (context, snapshot) {
+                                    if (!snapshot.hasData)
+                                      return const SizedBox(
+                                          height: 6, width: 100);
+                                    return SizedBox(
+                                        width: 120,
+                                        child: StabilityIndicator(
+                                            metrics: snapshot.data!));
+                                  }),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.restart_alt,
-                              color: Colors.white),
-                          onPressed: _resetSession,
-                          tooltip: "Chụp lại từ đầu",
-                        ),
-                        IconButton(
-                          key: _settingsButtonKey,
-                          icon: Icon(
-                            _isSettingsOpen
-                                ? Icons.settings
-                                : Icons.settings_outlined,
-                            color: Colors.white,
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.info_outline,
+                                color: Colors.white),
+                            onPressed: _showInformationScreen,
+                            tooltip: "Thông tin",
                           ),
-                          onPressed: _toggleSettings,
-                        ),
-                      ],
-                    )
-                  ],
+                          IconButton(
+                            icon: const Icon(Icons.restart_alt,
+                                color: Colors.white),
+                            onPressed: _resetSession,
+                            tooltip: "Chụp lại từ đầu",
+                          ),
+                          IconButton(
+                            key: _settingsButtonKey,
+                            icon: Icon(
+                              _isSettingsOpen
+                                  ? Icons.settings
+                                  : Icons.settings_outlined,
+                              color: Colors.white,
+                            ),
+                            onPressed: _toggleSettings,
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1707,168 +1816,160 @@ class _CameraScreenState extends State<CameraScreen>
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [Colors.black87, Colors.transparent],
+            child: IgnorePointer(
+              // Ignore pointer when in measurement mode to allow selector to receive touches
+              ignoring:
+                  _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Colors.black87, Colors.transparent],
+                  ),
                 ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Capture Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      // Gallery / Review Button
-                      GestureDetector(
-                        onTap: _capturedImages.isNotEmpty ? _openGallery : null,
-                        child: Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: Colors.black45,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: Colors.white.withOpacity(0.3)),
-                          ),
-                          child: _capturedImages.isNotEmpty
-                              ? Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    // Stack effect
-                                    if (_capturedImages.length > 1)
-                                      Transform.rotate(
-                                        angle: 0.2,
-                                        child: Container(
-                                          width: 44,
-                                          height: 44,
-                                          decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            image: DecorationImage(
-                                              image: FileImage(_capturedImages[
-                                                      _capturedImages.length -
-                                                          2]
-                                                  .file),
-                                              fit: BoxFit.cover,
-                                              opacity: 0.6,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    // Top Image
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color:
-                                                _capturedImages.last.hasWarnings
-                                                    ? Colors.orange
-                                                    : Colors.white,
-                                            width:
-                                                _capturedImages.last.hasWarnings
-                                                    ? 2.5
-                                                    : 1.5),
-                                        image: DecorationImage(
-                                          image: FileImage(
-                                              _capturedImages.last.file),
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : Icon(Icons.photo_library_outlined,
-                                  color: Colors.white.withOpacity(0.5)),
-                        ),
-                      ),
-
-                      // Capture Button
-                      GestureDetector(
-                        onTap: _captureImage,
-                        onPanStart: (details) {
-                           setState(() {
-                             _isModeSelectorVisible = true;
-                             _modeSelectorCenter = details.globalPosition;
-                             _modeSelectorDragPos = details.globalPosition;
-                           });
-                        },
-                        onPanUpdate: (details) {
-                           setState(() {
-                              _modeSelectorDragPos = details.globalPosition;
-                           });
-                        },
-                        onPanEnd: (details) {
-                           _handleModeDragEnd();
-                           setState(() {
-                              _isModeSelectorVisible = false;
-                           });
-                        },
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Container(
-                              width: 80,
-                              height: 80,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border:
-                                    Border.all(color: Colors.white, width: 4),
-                              ),
-                              child: Container(
-                                margin: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            if (_isCapturing)
-                              const SizedBox(
-                                width: 80,
-                                height: 80,
-                                child: CircularProgressIndicator(
-                                  color: Colors.redAccent,
-                                  strokeWidth: 4,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                        ),
-
-                      // Complete Button (Right Side)
-                      if (_capturedImages.length >= _requiredImages)
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Capture Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Gallery / Review Button
                         GestureDetector(
-                          onTap: _showProcessDialog,
+                          onTap:
+                              _capturedImages.isNotEmpty ? _openGallery : null,
                           child: Container(
                             width: 56,
                             height: 56,
                             decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Theme.of(context).primaryColor,
-                              border: Border.all(color: Colors.white, width: 2),
+                              color: Colors.black45,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: Colors.white.withOpacity(0.3)),
                             ),
-                            child: const Icon(Icons.check,
-                                color: Colors.white, size: 32),
+                            child: _capturedImages.isNotEmpty
+                                ? Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      // Stack effect
+                                      if (_capturedImages.length > 1)
+                                        Transform.rotate(
+                                          angle: 0.2,
+                                          child: Container(
+                                            width: 44,
+                                            height: 44,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              image: DecorationImage(
+                                                image: FileImage(
+                                                    _capturedImages[
+                                                            _capturedImages
+                                                                    .length -
+                                                                2]
+                                                        .file),
+                                                fit: BoxFit.cover,
+                                                opacity: 0.6,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      // Top Image
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                              color: _capturedImages
+                                                      .last.hasWarnings
+                                                  ? Colors.orange
+                                                  : Colors.white,
+                                              width: _capturedImages
+                                                      .last.hasWarnings
+                                                  ? 2.5
+                                                  : 1.5),
+                                          image: DecorationImage(
+                                            image: FileImage(
+                                                _capturedImages.last.file),
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Icon(Icons.photo_library_outlined,
+                                    color: Colors.white.withOpacity(0.5)),
                           ),
-                        )
-                      else
-                        const SizedBox(width: 56),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Chụp 6 ảnh, di chuyển đều nhau',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
+                        ),
+
+                        // Capture Button
+                        GestureDetector(
+                          onTap: _captureImage,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border:
+                                      Border.all(color: Colors.white, width: 4),
+                                ),
+                                child: Container(
+                                  margin: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              if (_isCapturing)
+                                const SizedBox(
+                                  width: 80,
+                                  height: 80,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.redAccent,
+                                    strokeWidth: 4,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+
+                        // Complete Button (Right Side)
+                        if (_capturedImages.length >= _requiredImages)
+                          GestureDetector(
+                            onTap: _showProcessDialog,
+                            child: Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(context).primaryColor,
+                                border:
+                                    Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: const Icon(Icons.check,
+                                  color: Colors.white, size: 32),
+                            ),
+                          )
+                        else
+                          const SizedBox(width: 56),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Chụp 6 ảnh, di chuyển đều nhau',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2001,16 +2102,16 @@ class _CameraScreenState extends State<CameraScreen>
                       : 'vertical', // Assuming one mode is active at a time
               onClose: () => setState(() => _showMathDetails = false),
             ),
-            
+
           // 8.3 Mode Selector Overlay
           if (_isModeSelectorVisible)
-             ModeSelectorOverlay(
-               center: _modeSelectorCenter,
-               currentDragPosition: _modeSelectorDragPos,
-               isVisible: true,
-               modes: _selectorModes,
-               onModeSelected: (index) {}, // Handled by gesture end
-             ),
+            EstimationModeSelector(
+              center: _dragStartPosition,
+              currentDragPosition: _currentDragPosition,
+              isVisible: true,
+              modes: _selectorModes,
+              onModeSelected: (mode) {}, // Handled by gesture end
+            ),
 
           // 8.2 Math Toggle Button
           Positioned(
@@ -2145,23 +2246,44 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
             ),
-          // 9. Mode Selector Overlay
-          // 9. Mode Selector Overlay
-          // ignore: unnecessary_null_comparison
-          if (_isModeSelectorVisible && _dragStartPosition != null)
-            Positioned.fill(
-              child: EstimationModeSelector(
-                center: _dragStartPosition,
-                currentDragPosition: _currentDragPosition,
-                isVisible: _isModeSelectorVisible,
-                modes: _selectorModes,
-                onModeSelected: (index) {},
-              ),
-            ),
         ],
       ),
       // FAB Removed as per request
     );
+  }
+
+  void _showModeExplanation(int index) async {
+    if (index < 0 || index >= _selectorModes.length) return;
+
+    setState(() {
+      _showingModeExplanation = true;
+      _isModeSelectorVisible = false;
+    });
+
+    HapticFeedback.mediumImpact();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => ModeExplanationDialog(
+        mode: _selectorModes[index],
+      ),
+    );
+
+    setState(() {
+      _showingModeExplanation = false;
+    });
+
+    // If user confirmed (pressed "Đã hiểu"), activate the mode
+    if (confirmed == true) {
+      final selectedMode = _selectorModes[index];
+      await _switchModeByType(selectedMode.type);
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Đã kích hoạt: ${selectedMode.label}'),
+        duration: const Duration(milliseconds: 800),
+      ));
+    }
   }
 
   void _handleModeSelection() {
@@ -2181,10 +2303,13 @@ class _CameraScreenState extends State<CameraScreen>
         double relative = angle - startAngle;
         int index = (relative / segmentAngle).floor();
         if (index >= 0 && index < _selectorModes.length) {
+          final selectedMode = _selectorModes[index];
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Đã chọn: ${_selectorModes[index].label}'),
+              content: Text('Đã chọn: ${selectedMode.label}'),
               duration: const Duration(milliseconds: 500)));
+          // Actually switch to the selected mode
+          _switchModeByType(selectedMode.type);
         }
       }
     }

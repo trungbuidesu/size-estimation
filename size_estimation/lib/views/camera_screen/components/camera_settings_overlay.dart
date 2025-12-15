@@ -364,10 +364,10 @@ class CameraSettingsOverlay extends StatelessWidget {
                                 const Divider(height: 1, color: Colors.white24),
                                 const SizedBox(height: 16),
 
-                                // Ground Plane Measurement
+                                // Advanced Processing
                                 const Align(
                                   alignment: Alignment.centerLeft,
-                                  child: Text("GROUND PLANE MEASUREMENT",
+                                  child: Text("ADVANCED PROCESSING",
                                       style: TextStyle(
                                           color: Colors.white54,
                                           fontWeight: FontWeight.bold,
@@ -375,17 +375,65 @@ class CameraSettingsOverlay extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 8),
 
-                                // Ground Plane Mode Toggle
+                                if (applyUndistortion != null &&
+                                    onUndistortionChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Lens Undistortion", applyUndistortion!,
+                                      (v) {
+                                    onUndistortionChanged!(v);
+                                  }),
+
+                                if (edgeSnapping != null &&
+                                    onEdgeSnappingChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Edge Snapping", edgeSnapping!, (v) {
+                                    onEdgeSnappingChanged!(v);
+                                  }),
+
+                                if (multiFrameMode != null &&
+                                    onMultiFrameModeChanged != null)
+                                  _buildResearcherSwitch(
+                                      "Multi-frame Averaging", multiFrameMode!,
+                                      (v) {
+                                    onMultiFrameModeChanged!(v);
+                                  }),
+
+                                const SizedBox(height: 16),
+                                const Divider(height: 1, color: Colors.white24),
+                                const SizedBox(height: 16),
+
+                                // Measurement Modes (Debug/Researcher Only)
+                                const Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text("MEASUREMENT MODES (DEBUG)",
+                                      style: TextStyle(
+                                          color: Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10)),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  "Use swipe gesture on camera screen to activate modes",
+                                  style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 10,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Ground Plane Mode (Debug Info Only)
                                 if (groundPlaneMode != null &&
                                     onGroundPlaneModeChanged != null)
                                   _buildResearcherSwitch(
-                                      "Ground Plane Mode", groundPlaneMode!,
-                                      (v) {
+                                      "Ground Plane Mode (Debug)",
+                                      groundPlaneMode!, (v) {
                                     onGroundPlaneModeChanged!(v);
                                   }),
 
-                                // Camera Height Input
-                                if (cameraHeightMeters != null &&
+                                // Camera Height Input (Only if ground plane is active)
+                                if (groundPlaneMode == true &&
+                                    cameraHeightMeters != null &&
                                     onCameraHeightChanged != null)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 8),
@@ -422,32 +470,18 @@ class CameraSettingsOverlay extends StatelessWidget {
                                     ),
                                   ),
 
-                                const SizedBox(height: 16),
-                                const Divider(height: 1, color: Colors.white24),
-                                const SizedBox(height: 16),
-
-                                // Planar Object Measurement
-                                const Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text("PLANAR OBJECT MEASUREMENT",
-                                      style: TextStyle(
-                                          color: Colors.white54,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10)),
-                                ),
-                                const SizedBox(height: 8),
-
-                                // Planar Object Mode Toggle
+                                // Planar Object Mode (Debug Info Only)
                                 if (planarObjectMode != null &&
                                     onPlanarObjectModeChanged != null)
                                   _buildResearcherSwitch(
-                                      "Planar Object Mode", planarObjectMode!,
-                                      (v) {
+                                      "Planar Object Mode (Debug)",
+                                      planarObjectMode!, (v) {
                                     onPlanarObjectModeChanged!(v);
                                   }),
 
-                                // Reference Object Selector
-                                if (referenceObject != null &&
+                                // Reference Object Selector (Only if planar mode is active)
+                                if (planarObjectMode == true &&
+                                    referenceObject != null &&
                                     onReferenceObjectChanged != null)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 8),
@@ -493,65 +527,13 @@ class CameraSettingsOverlay extends StatelessWidget {
                                     ),
                                   ),
 
-                                const SizedBox(height: 16),
-                                const Divider(height: 1, color: Colors.white24),
-                                const SizedBox(height: 16),
-
-                                // Vertical Object Measurement
-                                const Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text("VERTICAL OBJECT MEASUREMENT",
-                                      style: TextStyle(
-                                          color: Colors.white54,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10)),
-                                ),
-                                const SizedBox(height: 8),
-
-                                // Vertical Object Mode Toggle
+                                // Vertical Object Mode (Debug Info Only)
                                 if (verticalObjectMode != null &&
                                     onVerticalObjectModeChanged != null)
-                                  _buildResearcherSwitch("Vertical Object Mode",
+                                  _buildResearcherSwitch(
+                                      "Vertical Object Mode (Debug)",
                                       verticalObjectMode!, (v) {
                                     onVerticalObjectModeChanged!(v);
-                                  }),
-
-                                const SizedBox(height: 16),
-                                const Divider(height: 1, color: Colors.white24),
-                                const SizedBox(height: 16),
-
-                                // Advanced Processing
-                                const Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text("ADVANCED PROCESSING",
-                                      style: TextStyle(
-                                          color: Colors.white54,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10)),
-                                ),
-                                const SizedBox(height: 8),
-
-                                if (applyUndistortion != null &&
-                                    onUndistortionChanged != null)
-                                  _buildResearcherSwitch(
-                                      "Lens Undistortion", applyUndistortion!,
-                                      (v) {
-                                    onUndistortionChanged!(v);
-                                  }),
-
-                                if (edgeSnapping != null &&
-                                    onEdgeSnappingChanged != null)
-                                  _buildResearcherSwitch(
-                                      "Edge Snapping", edgeSnapping!, (v) {
-                                    onEdgeSnappingChanged!(v);
-                                  }),
-
-                                if (multiFrameMode != null &&
-                                    onMultiFrameModeChanged != null)
-                                  _buildResearcherSwitch(
-                                      "Multi-frame Averaging", multiFrameMode!,
-                                      (v) {
-                                    onMultiFrameModeChanged!(v);
                                   }),
                               ]
                             ],
