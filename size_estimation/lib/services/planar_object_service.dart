@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:vector_math/vector_math_64.dart' as vm;
 import 'package:size_estimation/models/camera_metadata.dart';
+import 'package:size_estimation/constants/index.dart';
 
 /// Result of planar object measurement
 class PlanarObjectMeasurement {
@@ -82,7 +83,8 @@ class PlanarObjectService {
       // Estimate scale from focal length (rough approximation)
       // Assumes object is ~50cm from camera
       final avgFocal = (kOut.fx + kOut.fy) / 2;
-      final estimatedDistance = 0.5; // meters
+      final estimatedDistance =
+          PlanarObjectConfig.estimatedDistanceMeters; // meters
       final pixelToCm = (estimatedDistance * 100) / avgFocal;
 
       widthCm = width * pixelToCm;
@@ -178,7 +180,7 @@ class PlanarObjectService {
     final p_prime = H * p;
 
     final w = p_prime.z;
-    if (w.abs() < 1e-10) {
+    if (w.abs() < PlanarObjectConfig.zeroEpsilon) {
       return vm.Vector2(point.x, point.y); // Return original if singular
     }
 
@@ -193,12 +195,14 @@ class PlanarObjectService {
     required bool hasReference,
   }) {
     // Base error from corner detection (±3 pixels per corner)
-    const cornerUncertainty = 3.0;
+    const cornerUncertainty = PlanarObjectConfig.cornerUncertainty;
     final avgDimension = (widthPixels + heightPixels) / 2;
     final baseErrorRatio = (cornerUncertainty * 4) / avgDimension;
 
     // Error is lower if we have a reference measurement
-    final referenceBonus = hasReference ? 0.5 : 1.0;
+    final referenceBonus = hasReference
+        ? PlanarObjectConfig.referenceBonusFactor
+        : PlanarObjectConfig.noReferencePenaltyFactor;
 
     // Perspective distortion error
     final perspectiveError = _estimatePerspectiveDistortion(corners);
@@ -208,8 +212,9 @@ class PlanarObjectService {
         baseErrorRatio * referenceBonus * (1 + perspectiveError);
 
     // Convert to cm (assume average dimension ~20cm for objects)
-    final estimatedDimension = 20.0; // cm
-    return (totalErrorRatio * estimatedDimension).clamp(0.5, 10.0);
+    final estimatedDimension = PlanarObjectConfig.estimatedDimensionCm; // cm
+    return (totalErrorRatio * estimatedDimension).clamp(
+        PlanarObjectConfig.minErrorClampCm, PlanarObjectConfig.maxErrorClampCm);
   }
 
   /// Estimate perspective distortion from corner angles
@@ -232,11 +237,14 @@ class PlanarObjectService {
     }
 
     // Ideal angle is 90 degrees (π/2)
-    final avgDeviation =
-        angles.map((a) => (a - math.pi / 2).abs()).reduce((a, b) => a + b) / 4;
+    final avgDeviation = angles
+            .map((a) => (a - PlanarObjectConfig.idealAngleRad).abs())
+            .reduce((a, b) => a + b) /
+        4;
 
     // Normalize to 0-1 range
-    return (avgDeviation / (math.pi / 4)).clamp(0.0, 1.0);
+    return (avgDeviation / PlanarObjectConfig.angleNormalizationFactor)
+        .clamp(0.0, 1.0);
   }
 
   /// Detect if corners form a valid quadrilateral
@@ -270,13 +278,6 @@ class PlanarObjectService {
 
   /// Get common reference sizes
   static Map<String, Map<String, double>> getReferenceSizes() {
-    return {
-      'A4 Paper': {'width': 21.0, 'height': 29.7},
-      'A5 Paper': {'width': 14.8, 'height': 21.0},
-      'Letter Paper': {'width': 21.6, 'height': 27.9},
-      'Credit Card': {'width': 8.56, 'height': 5.398},
-      'iPhone 14': {'width': 7.15, 'height': 14.67},
-      'iPad': {'width': 17.78, 'height': 25.05},
-    };
+    return PlanarObjectConfig.referenceSizes;
   }
 }
