@@ -55,8 +55,10 @@ class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
         // Draw corners and edges
         if (_corners.isNotEmpty)
           Positioned.fill(
-            child: CustomPaint(
-              painter: _CornersPainter(corners: _corners),
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _CornersPainter(corners: _corners),
+              ),
             ),
           ),
 
@@ -66,20 +68,22 @@ class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
             top: 20,
             left: 0,
             right: 0,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _getInstructionText(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _getInstructionText(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -92,19 +96,21 @@ class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
             top: 60,
             left: 0,
             right: 0,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Reference: ${widget.referenceObject}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Reference: ${widget.referenceObject}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),

@@ -315,6 +315,11 @@ class _CameraScreenState extends State<CameraScreen>
       _maxZoom = await _controller!.getMaxZoomLevel();
       _currentZoom = _minZoom;
 
+      // Start Image Stream for Advanced Features (Snapping, Tracking)
+      await _controller!.startImageStream((image) {
+        _latestImage = image;
+      });
+
       // Initialize dynamic intrinsics service
       await _initializeDynamicIntrinsics();
 

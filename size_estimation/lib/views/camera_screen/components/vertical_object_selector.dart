@@ -59,10 +59,12 @@ class _VerticalObjectSelectorState extends State<VerticalObjectSelector> {
         // Painting
         if (_topPoint != null || _bottomPoint != null)
           Positioned.fill(
-            child: CustomPaint(
-              painter: _VerticalPainter(
-                top: _topPoint,
-                bottom: _bottomPoint,
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _VerticalPainter(
+                  top: _topPoint,
+                  bottom: _bottomPoint,
+                ),
               ),
             ),
           ),
@@ -72,19 +74,22 @@ class _VerticalObjectSelectorState extends State<VerticalObjectSelector> {
           top: 20,
           left: 0,
           right: 0,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _getInstruction(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
+          child: IgnorePointer(
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _getInstruction(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),

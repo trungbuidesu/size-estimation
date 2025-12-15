@@ -57,10 +57,12 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
         // Draw points and line
         if (_pointA != null || _pointB != null)
           Positioned.fill(
-            child: CustomPaint(
-              painter: _PointsPainter(
-                pointA: _pointA,
-                pointB: _pointB,
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _PointsPainter(
+                  pointA: _pointA,
+                  pointB: _pointB,
+                ),
               ),
             ),
           ),
@@ -71,20 +73,22 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
             top: 20,
             left: 0,
             right: 0,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Tap to select first point (A)',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Tap to select first point (A)',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -96,20 +100,22 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
             top: 20,
             left: 0,
             right: 0,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Tap to select second point (B)',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Tap to select second point (B)',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
