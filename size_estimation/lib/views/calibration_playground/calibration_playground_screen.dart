@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
+import 'package:size_estimation/views/shared_components/index.dart';
+import 'package:size_estimation/constants/index.dart';
 
 class CalibrationPlaygroundScreen extends StatefulWidget {
   const CalibrationPlaygroundScreen({super.key});
@@ -47,7 +49,7 @@ class _CalibrationPlaygroundScreenState
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Lỗi khi chọn ảnh: $e';
+        _errorMessage = '${AppStrings.errorPickImage}$e';
       });
     }
   }
@@ -63,7 +65,7 @@ class _CalibrationPlaygroundScreenState
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Lỗi khi chụp ảnh: $e';
+        _errorMessage = '${AppStrings.errorCaptureImage}$e';
       });
     }
   }
@@ -72,7 +74,7 @@ class _CalibrationPlaygroundScreenState
     if (_chessboardImages.length < 10) {
       setState(() {
         _errorMessage =
-            'Cần ít nhất 10 hình ảnh để hiệu chuẩn. Hiện tại: ${_chessboardImages.length}';
+            '${AppStrings.minImagesRequired}${_chessboardImages.length}';
       });
       return;
     }
@@ -123,13 +125,14 @@ class _CalibrationPlaygroundScreenState
         });
       } else {
         setState(() {
-          _errorMessage = result['errorMessage'] ?? 'Hiệu chuẩn thất bại';
+          _errorMessage =
+              result['errorMessage'] ?? AppStrings.calibrationFailed;
           _isProcessing = false;
         });
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Hiệu chuẩn thất bại: $e';
+        _errorMessage = '${AppStrings.calibrationFailedPrefix}$e';
         _isProcessing = false;
       });
     }
@@ -141,28 +144,26 @@ class _CalibrationPlaygroundScreenState
     final nameController =
         TextEditingController(text: _calibratedProfile!.name);
 
-    final result = await showDialog<bool>(
+    final result = await CommonAlertDialog.show<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Lưu Hồ Sơ Hiệu Chuẩn'),
-        content: TextField(
-          controller: nameController,
-          decoration: const InputDecoration(
-            labelText: 'Tên Hồ Sơ',
-            hintText: 'Ví dụ: Hiệu chuẩn của tôi',
-          ),
+      title: AppStrings.saveProfileTitle,
+      content: TextField(
+        controller: nameController,
+        decoration: const InputDecoration(
+          labelText: AppStrings.profileNameLabel,
+          hintText: AppStrings.profileNameHint,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Lưu'),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text(AppStrings.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(AppStrings.save),
+        ),
+      ],
     );
 
     if (result == true) {
@@ -174,7 +175,9 @@ class _CalibrationPlaygroundScreenState
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã lưu hồ sơ "${updatedProfile.name}"!')),
+          SnackBar(
+              content: Text(
+                  '${AppStrings.saveProfileSuccess}${updatedProfile.name}"!')),
         );
       }
     }
@@ -184,18 +187,18 @@ class _CalibrationPlaygroundScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Hiệu Chuẩn (Calibration)'),
+        title: const Text(AppStrings.calibrationTitle),
         actions: [
           if (_calibratedProfile != null)
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: _saveProfile,
-              tooltip: 'Lưu Hồ Sơ',
+              tooltip: AppStrings.saveTooltip,
             ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 48),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -224,27 +227,33 @@ class _CalibrationPlaygroundScreenState
 
   Widget _buildInstructions() {
     return Card(
+      elevation: 0,
+      color: Theme.of(context).cardTheme.color,
+      shape: Theme.of(context).cardTheme.shape,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.info_outline, color: Colors.blue),
-                SizedBox(width: 8),
+                Icon(Icons.info_outline,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
                 Text(
-                  'Hướng Dẫn Hiệu Chuẩn',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  AppStrings.calibrationGuideTitle,
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            _buildStep('1', 'In mẫu ChArUco (ví dụ: 5x7 hoặc 8x11)'),
-            _buildStep(
-                '2', 'Chụp 15-30 ảnh từ các góc độ và khoảng cách khác nhau'),
-            _buildStep('3', 'Đảm bảo toàn bộ bảng đều nằm trong khung hình'),
-            _buildStep('4', 'Nhấn "Chạy Hiệu Chuẩn" để xử lý'),
+            _buildStep('1', AppStrings.step1),
+            _buildStep('2', AppStrings.step2),
+            _buildStep('3', AppStrings.step3),
+            _buildStep('4', AppStrings.step4),
           ],
         ),
       ),
@@ -252,6 +261,7 @@ class _CalibrationPlaygroundScreenState
   }
 
   Widget _buildStep(String number, String text) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -261,14 +271,14 @@ class _CalibrationPlaygroundScreenState
             width: 24,
             height: 24,
             decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
+              color: theme.colorScheme.primaryContainer,
               shape: BoxShape.circle,
             ),
             child: Center(
               child: Text(
                 number,
-                style: const TextStyle(
-                  color: Colors.blue,
+                style: TextStyle(
+                  color: theme.colorScheme.onPrimaryContainer,
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
@@ -276,7 +286,10 @@ class _CalibrationPlaygroundScreenState
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
+          Expanded(
+              child: Text(text,
+                  style: TextStyle(
+                      fontSize: 13, color: theme.colorScheme.onSurface))),
         ],
       ),
     );
@@ -284,23 +297,27 @@ class _CalibrationPlaygroundScreenState
 
   Widget _buildChessboardSettings() {
     return Card(
+      elevation: 0,
+      color: Theme.of(context).cardTheme.color,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Cài Đặt Mục Tiêu',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            Text(
+              AppStrings.targetSettingsTitle,
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface),
             ),
-            const SizedBox(height: 12),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Chiều Rộng Bảng [mm]',
+                      labelText: AppStrings.boardWidthLabel,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -315,7 +332,7 @@ class _CalibrationPlaygroundScreenState
                 Expanded(
                   child: TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Chiều Cao Bảng [mm]',
+                      labelText: AppStrings.boardHeightLabel,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -334,7 +351,7 @@ class _CalibrationPlaygroundScreenState
                 Expanded(
                   child: TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Số Hàng',
+                      labelText: AppStrings.rowsLabel,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -348,7 +365,7 @@ class _CalibrationPlaygroundScreenState
                 Expanded(
                   child: TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Số Cột',
+                      labelText: AppStrings.columnsLabel,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -363,7 +380,7 @@ class _CalibrationPlaygroundScreenState
             const SizedBox(height: 12),
             TextField(
               decoration: const InputDecoration(
-                labelText: 'Kích Thước Ô Vuông (mm)',
+                labelText: AppStrings.squareSizeLabel,
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -375,7 +392,7 @@ class _CalibrationPlaygroundScreenState
             DropdownButtonFormField<String>(
               value: 'DICT_4x4',
               decoration: const InputDecoration(
-                labelText: 'Từ Điển Marker',
+                labelText: AppStrings.dictLabel,
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -391,7 +408,7 @@ class _CalibrationPlaygroundScreenState
             const SizedBox(height: 12),
             TextField(
               decoration: const InputDecoration(
-                labelText: 'ID Bắt Đầu',
+                labelText: AppStrings.startIdLabel,
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
@@ -406,7 +423,10 @@ class _CalibrationPlaygroundScreenState
   }
 
   Widget _buildImageSection() {
+    final theme = Theme.of(context);
     return Card(
+      elevation: 0,
+      color: theme.cardTheme.color,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -416,40 +436,43 @@ class _CalibrationPlaygroundScreenState
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Hình Ảnh (${_chessboardImages.length})',
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.bold),
+                  '${AppStrings.imagesHeader}${_chessboardImages.length})',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface),
                 ),
                 Row(
                   children: [
                     IconButton(
                       icon: const Icon(Icons.camera_alt),
                       onPressed: _captureImage,
-                      tooltip: 'Chụp ảnh',
+                      tooltip: AppStrings.captureTooltip,
                     ),
                     IconButton(
                       icon: const Icon(Icons.photo_library),
                       onPressed: _pickImages,
-                      tooltip: 'Chọn từ thư viện',
+                      tooltip: AppStrings.libraryTooltip,
                     ),
                   ],
                 ),
               ],
             ),
             if (_chessboardImages.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
+              Padding(
+                padding: const EdgeInsets.all(32),
                 child: Center(
                   child: Text(
-                    'Chưa có hình ảnh nào',
+                    AppStrings.noImages,
                     style: TextStyle(
-                        color: Colors.grey, fontStyle: FontStyle.italic),
+                        color: theme.colorScheme.onSurface.withOpacity(0.5),
+                        fontStyle: FontStyle.italic),
                   ),
                 ),
               )
             else
               Container(
-                height: 300, // Fixed height for grid
+                height: 300,
                 margin: const EdgeInsets.only(top: 8),
                 child: GridView.builder(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -482,8 +505,8 @@ class _CalibrationPlaygroundScreenState
                             },
                             child: Container(
                               padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Colors.red,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.error,
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(Icons.close,
@@ -507,14 +530,16 @@ class _CalibrationPlaygroundScreenState
       onPressed:
           _isProcessing || _chessboardImages.isEmpty ? null : _runCalibration,
       icon: _isProcessing
-          ? const SizedBox(
+          ? SizedBox(
               width: 16,
               height: 16,
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white),
+                  strokeWidth: 2,
+                  color: Theme.of(context).colorScheme.onPrimary),
             )
           : const Icon(Icons.calculate),
-      label: Text(_isProcessing ? 'Đang xử lý...' : 'Chạy Hiệu Chuẩn'),
+      label: Text(
+          _isProcessing ? AppStrings.processing : AppStrings.runCalibration),
       style: FilledButton.styleFrom(
         padding: const EdgeInsets.all(16),
       ),
@@ -522,21 +547,22 @@ class _CalibrationPlaygroundScreenState
   }
 
   Widget _buildErrorMessage() {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.1),
+        color: theme.colorScheme.errorContainer.withOpacity(0.4),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red),
+        border: Border.all(color: theme.colorScheme.error),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: Colors.red),
+          Icon(Icons.error_outline, color: theme.colorScheme.error),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               _errorMessage!,
-              style: const TextStyle(color: Colors.red),
+              style: TextStyle(color: theme.colorScheme.onSurface),
             ),
           ),
         ],
@@ -545,8 +571,10 @@ class _CalibrationPlaygroundScreenState
   }
 
   Widget _buildResultSection() {
+    final theme = Theme.of(context);
     return Card(
-      color: Colors.green.withOpacity(0.1),
+      // ADS Success state: Green background (light)
+      color: const Color(0xFF22A06B).withOpacity(0.1), // Success token tint
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -554,10 +582,11 @@ class _CalibrationPlaygroundScreenState
           children: [
             const Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.green),
+                Icon(Icons.check_circle,
+                    color: Color(0xFF22A06B)), // Success token
                 SizedBox(width: 8),
                 Text(
-                  'Hiệu Chuẩn Hoàn Tất',
+                  AppStrings.calibrationComplete,
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -570,13 +599,13 @@ class _CalibrationPlaygroundScreenState
             if (_calibratedProfile!.rmsError != null) ...[
               const Divider(),
               _buildResultRow(
-                'Sai số RMS',
+                AppStrings.rmsError,
                 '${_calibratedProfile!.rmsError!.toStringAsFixed(3)} px',
                 valueColor: _calibratedProfile!.rmsError! < 0.5
-                    ? Colors.green
+                    ? const Color(0xFF22A06B)
                     : _calibratedProfile!.rmsError! < 1.0
-                        ? Colors.orange
-                        : Colors.red,
+                        ? const Color(0xFFE2B203)
+                        : theme.colorScheme.error,
               ),
             ],
           ],
@@ -596,7 +625,7 @@ class _CalibrationPlaygroundScreenState
             value,
             style: TextStyle(
               fontFamily: 'Courier',
-              color: valueColor,
+              color: valueColor ?? Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -606,30 +635,35 @@ class _CalibrationPlaygroundScreenState
   }
 
   Widget _buildCharucoSummary() {
+    final theme = Theme.of(context);
     return Card(
-      elevation: 2,
+      elevation: 0,
+      color: theme.cardTheme.color,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.grid_4x4, color: Colors.purple),
-                SizedBox(width: 8),
+                Icon(Icons.grid_4x4, color: theme.colorScheme.tertiary),
+                const SizedBox(width: 8),
                 Text(
-                  'ChArUco Board là gì?',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  AppStrings.charucoInfoTitle,
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Bảng ChArUco là sự kết hợp giữa bàn cờ vua tiêu chuẩn và các điểm đánh dấu ArUco. '
-              'Các ô trắng của bàn cờ chứa các marker ArUco nhỏ. '
-              'Thiết kế lai này mang lại độ chính xác cao của việc phát hiện góc bàn cờ '
-              'cùng với sự mạnh mẽ của việc nhận dạng marker, cho phép hiệu chuẩn ngay cả khi bảng bị che khuất một phần.',
-              style: TextStyle(fontSize: 13, height: 1.4),
+            Text(
+              AppStrings.charucoInfoDesc,
+              style: TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: theme.colorScheme.onSurface),
             ),
             const SizedBox(height: 16),
             Center(
@@ -637,8 +671,9 @@ class _CalibrationPlaygroundScreenState
                 width: 200,
                 height: 140,
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  color: Colors.white,
+                  border: Border.all(color: theme.dividerColor),
+                  color: Colors
+                      .white, // Preview should arguably be white always as it is paper
                 ),
                 child: CustomPaint(
                   painter: _CharucoPreviewPainter(),
@@ -646,31 +681,30 @@ class _CalibrationPlaygroundScreenState
               ),
             ),
             const SizedBox(height: 8),
-            const Center(
+            Center(
               child: Text(
-                'Minh họa đơn giản',
+                AppStrings.simpleIllustration,
                 style: TextStyle(
                     fontSize: 11,
                     fontStyle: FontStyle.italic,
-                    color: Colors.grey),
+                    color: theme.colorScheme.onSurfaceVariant),
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Giải thích thông số:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            Text(
+              AppStrings.paramExplanation,
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: theme.colorScheme.onSurface),
             ),
             const SizedBox(height: 8),
+            _buildParamInfo(AppStrings.paramBoard, AppStrings.paramBoardDesc),
+            _buildParamInfo(AppStrings.paramRowCol, AppStrings.paramRowColDesc),
+            _buildParamInfo(AppStrings.paramSquare, AppStrings.paramSquareDesc),
+            _buildParamInfo(AppStrings.paramDict, AppStrings.paramDictDesc),
             _buildParamInfo(
-                'Bảng', 'Chiều rộng/cao vật lý của toàn bộ bảng giấy'),
-            _buildParamInfo(
-                'Hàng/Cột', 'Số lượng ô vuông theo chiều dọc/ngang'),
-            _buildParamInfo(
-                'Ô Vuông', 'Kích thước cạnh của một ô vuông đen/trắng'),
-            _buildParamInfo(
-                'Từ Điển', 'Bộ từ điển ArUco được sử dụng để tạo marker'),
-            _buildParamInfo(
-                'ID Bắt Đầu', 'ID của marker đầu tiên (thường là 0)'),
+                AppStrings.paramStartId, AppStrings.paramStartIdDesc),
           ],
         ),
       ),
@@ -682,7 +716,8 @@ class _CalibrationPlaygroundScreenState
       padding: const EdgeInsets.only(bottom: 4),
       child: RichText(
         text: TextSpan(
-          style: const TextStyle(fontSize: 12, color: Colors.black87),
+          style: TextStyle(
+              fontSize: 12, color: Theme.of(context).colorScheme.onSurface),
           children: [
             TextSpan(
                 text: '• $label: ',

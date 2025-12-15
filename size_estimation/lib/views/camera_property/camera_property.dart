@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:size_estimation/views/shared_components/index.dart';
+import 'package:size_estimation/constants/index.dart';
 
 class CameraPropertiesWidget extends StatefulWidget {
   const CameraPropertiesWidget({super.key});
@@ -33,12 +35,12 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
       });
     } on PlatformException catch (e) {
       setState(() {
-        _errorMessage = "Failed to get camera properties: '${e.message}'.";
+        _errorMessage = "${AppStrings.failedGetProps}${e.message}'.";
         _isLoading = false;
       });
     } catch (e) {
       setState(() {
-        _errorMessage = "An error occurred: $e";
+        _errorMessage = "${AppStrings.errorOccurred}$e";
         _isLoading = false;
       });
     }
@@ -77,149 +79,125 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
       );
     }
 
-    return SingleChildScrollView(
-      physics: const ClampingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12.0),
-            child: Text(
-              'Camera Properties',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12.0),
+          child: Text(
+            AppStrings.cameraPropsTitle,
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          _buildScoreSection(),
-          _buildPropertyTile(
-            'Lens Intrinsic Calibration',
-            'Hiệu chuẩn nội tại ống kính',
-            _cameraProperties['LENS_INTRINSIC_CALIBRATION'],
-          ),
-          _buildPropertyTile(
-            'Lens Radial Distortion',
-            'Biến dạng hướng tâm ống kính',
-            _cameraProperties['LENS_RADIAL_DISTORTION'],
-          ),
-          _buildPropertyTile(
-            'Sensor Info Physical Size',
-            'Kích thước vật lý cảm biến',
-            _cameraProperties['SENSOR_INFO_PHYSICAL_SIZE'],
-          ),
-          _buildPropertyTile(
-            'Sensor Info Active Array Size',
-            'Kích thước mảng hoạt động',
-            _cameraProperties['SENSOR_INFO_ACTIVE_ARRAY_SIZE'],
-          ),
-          _buildPropertyTile(
-            'Request Available Capabilities',
-            'Các khả năng hiện có',
-            _cameraProperties['REQUEST_AVAILABLE_CAPABILITIES'],
-          ),
-          _buildPropertyTile(
-            'Scaler Crop Region',
-            'Vùng cắt tỷ lệ (Zoom)',
-            _cameraProperties['SCALER_CROP_REGION'],
-          ),
-          const SizedBox(height: 50), // Bottom padding
-        ],
-      ),
+        ),
+        _buildScoreSection(),
+        _buildPropertyTile(
+          AppStrings.propLensIntrinsic,
+          AppStrings.propLensIntrinsicDesc,
+          _cameraProperties['LENS_INTRINSIC_CALIBRATION'],
+        ),
+        _buildPropertyTile(
+          AppStrings.propLensDistortion,
+          AppStrings.propLensDistortionDesc,
+          _cameraProperties['LENS_RADIAL_DISTORTION'],
+        ),
+        _buildPropertyTile(
+          AppStrings.propSensorPhysical,
+          AppStrings.propSensorPhysicalDesc,
+          _cameraProperties['SENSOR_INFO_PHYSICAL_SIZE'],
+        ),
+        _buildPropertyTile(
+          AppStrings.propSensorActive,
+          AppStrings.propSensorActiveDesc,
+          _cameraProperties['SENSOR_INFO_ACTIVE_ARRAY_SIZE'],
+        ),
+        _buildPropertyTile(
+          AppStrings.propCapabilities,
+          AppStrings.propCapabilitiesDesc,
+          _cameraProperties['REQUEST_AVAILABLE_CAPABILITIES'],
+        ),
+        _buildPropertyTile(
+          AppStrings.propCropRegion,
+          AppStrings.propCropRegionDesc,
+          _cameraProperties['SCALER_CROP_REGION'],
+        ),
+        const SizedBox(height: 50), // Bottom padding
+      ],
     );
   }
 
   Map<String, String> _getPropertyInfo(String title) {
     switch (title) {
-      case 'Lens Intrinsic Calibration':
+      case AppStrings.propLensIntrinsic:
         return {
-          'description':
-              'Các tham số mô tả sự ánh xạ từ không gian 3D sang mặt phẳng hình ảnh 2D (tiêu cự, điểm chính).',
-          'purpose':
-              'Cần thiết để chuyển đổi các điểm ảnh 2D trở lại thành các tia 3D. Được sử dụng trong đo lường chính xác.',
-          'missing':
-              'Không thể tái tạo chính xác hình học 3D từ một hình ảnh duy nhất. Các tính toán kích thước sẽ không chính xác.'
+          'description': AppStrings.infoIntrinsicDesc,
+          'purpose': AppStrings.infoIntrinsicPurpose,
+          'missing': AppStrings.infoIntrinsicMissing
         };
-      case 'Lens Radial Distortion':
+      case AppStrings.propLensDistortion:
         return {
-          'description':
-              'Các hệ số mô tả cách ống kính bẻ cong ánh sáng (biến dạng thùng/gối).',
-          'purpose':
-              'Sửa biến dạng hình học để các đường thẳng trong thực tế cũng thẳng trong hình ảnh.',
-          'missing':
-              'Các phép đo gần các cạnh của hình ảnh sẽ không chính xác.'
+          'description': AppStrings.infoDistortionDesc,
+          'purpose': AppStrings.infoDistortionPurpose,
+          'missing': AppStrings.infoDistortionMissing
         };
-      case 'Sensor Info Physical Size':
+      case AppStrings.propSensorPhysical:
         return {
-          'description':
-              'Kích thước vật lý (chiều rộng x chiều cao) của cảm biến camera tính bằng milimet.',
-          'purpose':
-              'Xác định tỷ lệ vật lý của các đối tượng được chiếu lên cảm biến. Quan trọng để tính toán "pixel trên milimet".',
-          'missing':
-              'Không thể tính toán kích thước thế giới thực từ pixel nếu không có đối tượng tham chiếu đã biết.'
+          'description': AppStrings.infoSensorPhysDesc,
+          'purpose': AppStrings.infoSensorPhysPurpose,
+          'missing': AppStrings.infoSensorPhysMissing
         };
-      case 'Sensor Info Active Array Size':
+      case AppStrings.propSensorActive:
         return {
-          'description':
-              'Vùng của cảm biến thực sự được sử dụng để chụp ảnh (tính bằng pixel).',
-          'purpose':
-              'Được sử dụng cùng với kích thước vật lý để tính kích thước điểm ảnh (kích thước vật lý của một pixel).',
-          'missing':
-              'Không thể ánh xạ tọa độ pixel sang tọa độ cảm biến vật lý một cách chính xác.'
+          'description': AppStrings.infoSensorActiveDesc,
+          'purpose': AppStrings.infoSensorActivePurpose,
+          'missing': AppStrings.infoSensorActiveMissing
         };
-      case 'Request Available Capabilities':
+      case AppStrings.propCapabilities:
         return {
-          'description':
-              'Danh sách các tính năng mà camera hỗ trợ (ví dụ: RAW, MANUAL_SENSOR, DEPTH_OUTPUT).',
-          'purpose':
-              'Kiểm tra xem thiết bị có hỗ trợ các tính năng nâng cao như ước lượng độ sâu hoặc điều khiển thủ công hay không.',
-          'missing':
-              'Ứng dụng có thể giả định các khả năng không có, dẫn đến sự cố hoặc tính năng bị thiếu.'
+          'description': AppStrings.infoCapsDesc,
+          'purpose': AppStrings.infoCapsPurpose,
+          'missing': AppStrings.infoCapsMissing
         };
-      case 'Scaler Crop Region':
+      case AppStrings.propCropRegion:
         return {
-          'description':
-              'Vùng của cảm biến hiện đang được đọc để tạo ra luồng hình ảnh.',
-          'purpose':
-              'Triển khai zoom kỹ thuật số. Cho biết phần nào của cảm biến đầy đủ tương ứng với khung hình hiện tại của bạn.',
-          'missing':
-              'Mức zoom kỹ thuật số không xác định. Các phép đo sẽ hoàn toàn sai nếu người dùng phóng to.'
+          'description': AppStrings.infoCropDesc,
+          'purpose': AppStrings.infoCropPurpose,
+          'missing': AppStrings.infoCropMissing
         };
       default:
         return {
-          'description': 'Không có mô tả.',
-          'purpose': 'Không xác định.',
-          'missing': 'Không xác định.'
+          'description': AppStrings.noDesc,
+          'purpose': AppStrings.unknown,
+          'missing': AppStrings.unknown
         };
     }
   }
 
   void _showPropertyInfo(String title) {
     final info = _getPropertyInfo(title);
-    showDialog(
+    CommonAlertDialog.show(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildInfoSection('Mô tả', info['description']!),
-              const SizedBox(height: 12),
-              _buildInfoSection('Mục đích', info['purpose']!),
-              const SizedBox(height: 12),
-              _buildInfoSection('Nếu thiếu', info['missing']!,
-                  isWarning: true),
-            ],
-          ),
+      title: title,
+      icon: Icons.info_outline,
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildInfoSection(AppStrings.description, info['description']!),
+            const SizedBox(height: 12),
+            _buildInfoSection(AppStrings.purpose, info['purpose']!),
+            const SizedBox(height: 12),
+            _buildInfoSection(AppStrings.ifMissing, info['missing']!,
+                isWarning: true),
+          ],
         ),
-        actions: [
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Đóng'),
-          ),
-        ],
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text(AppStrings.close),
+        ),
+      ],
     );
   }
 
@@ -248,7 +226,7 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
   Widget _buildPropertyTile(String title, String subtitle, dynamic value) {
     String displayValue;
     if (value == null) {
-      displayValue = 'N/A';
+      displayValue = AppStrings.na;
     } else if (value is List) {
       displayValue = value.join(', ');
     } else if (value is Map) {
@@ -258,10 +236,15 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
       displayValue = value.toString();
     }
 
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Card(
-      color: Colors.grey[900],
+      elevation: 0,
+      color: theme.cardTheme.color,
+      shape: theme.cardTheme.shape,
       margin: const EdgeInsets.only(bottom: 12),
-      child: GestureDetector(
+      child: InkWell(
         onLongPress: () => _showPropertyInfo(title),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -277,16 +260,16 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(
-                            color: Colors.blueAccent,
+                          style: TextStyle(
+                            color: colorScheme.primary, // Brand Blue
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
                         ),
                         Text(
                           subtitle,
-                          style: const TextStyle(
-                            color: Colors.grey,
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, // N500/N600
                             fontSize: 12,
                             fontStyle: FontStyle.italic,
                           ),
@@ -297,10 +280,10 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
                   const SizedBox(width: 6),
                   GestureDetector(
                     onTap: () => _showPropertyInfo(title),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4.0),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4.0),
                       child: Icon(Icons.info_outline,
-                          color: Colors.white54, size: 16),
+                          color: colorScheme.onSurfaceVariant, size: 16),
                     ),
                   ),
                 ],
@@ -308,8 +291,8 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
               const SizedBox(height: 8),
               Text(
                 displayValue,
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: colorScheme.onSurface, // N800
                   fontSize: 14,
                   fontFamily: 'Courier', // Monospace for numbers
                 ),
@@ -320,37 +303,6 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
       ),
     );
   }
-
-
-    int score = 0;
-    // 1. Sensor & Spatial (Max 60)
-    // Check Depth/Capabilities
-    final caps = _cameraProperties['REQUEST_AVAILABLE_CAPABILITIES'].toString();
-    if (caps.contains('DEPTH_OUTPUT')) score += 20;
-    if (caps.contains('LOGICAL_MULTI_CAMERA')) score += 10;
-
-    // Check Resolution (Approximation from Active Array Size)
-    final activeArray =
-        _cameraProperties['SENSOR_INFO_ACTIVE_ARRAY_SIZE'].toString();
-    // Expected format: Rect(0, 0 - w, h) or similar string depending on platform impl.
-    // If just checking presence of data:
-    if (activeArray != 'null') score += 15;
-
-    // Check Calibration Data
-    if (_cameraProperties['LENS_INTRINSIC_CALIBRATION'] != null) score += 10;
-    if (_cameraProperties['LENS_RADIAL_DISTORTION'] != null) score += 5;
-
-    // 2. Processing (Max 25)
-    // Hardware Level (proxied by capabilities)
-    if (caps.contains('MANUAL_SENSOR')) score += 10;
-    if (caps.contains('RAW')) score += 5;
-    // Base speed score
-    score += 10;
-
-    // 3. Compatibility (Max 15)
-    score += 15; // Assume compatible if running app
-
-
 
   Widget _buildScoreSection() {
     // 1. Sensor & Spatial (Max 60)
@@ -381,25 +333,32 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
     final totalScore =
         (spatialScore + processingScore + compatScore).clamp(0, 100);
 
-    Color scoreColor = Colors.red;
+    // Semantic Colors (Hardcoded to ADS constants or closest equivalents if not in Scheme)
+    // Success: Green, Warning: Yellow/Orange, Error: Red
+    Color scoreColor = const Color(0xFFCA3521); // Danger Bold
     if (totalScore >= 80)
-      scoreColor = Colors.green;
-    else if (totalScore >= 50) scoreColor = Colors.orange;
+      scoreColor = const Color(0xFF22A06B); // Success Bold
+    else if (totalScore >= 50)
+      scoreColor = const Color(0xFFE2B203); // Warning Bold
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey[900],
+        color: theme.cardTheme.color,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white24),
+        // If theme has distinct card color, border might be redundant, but keeping subtle
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         children: [
-          const Text(
-            'ĐIỂM HIỆU NĂNG (BETA)',
+          Text(
+            AppStrings.scoreTitle,
             style: TextStyle(
-              color: Colors.white70,
+              color: colorScheme.onSurfaceVariant,
               fontSize: 12,
               fontWeight: FontWeight.bold,
               letterSpacing: 1.2,
@@ -418,11 +377,12 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 10, left: 4),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10, left: 4),
                 child: Text(
                   '/ 100',
-                  style: TextStyle(color: Colors.white54, fontSize: 16),
+                  style: TextStyle(
+                      color: colorScheme.onSurfaceVariant, fontSize: 16),
                 ),
               ),
             ],
@@ -430,50 +390,56 @@ class _CameraPropertiesWidgetState extends State<CameraPropertiesWidget> {
           const SizedBox(height: 8),
           Text(
             totalScore >= 80
-                ? 'Tuyệt vời cho Photogrammetry'
+                ? AppStrings.scoreExcellent
                 : totalScore >= 50
-                    ? 'Đủ điều kiện cơ bản'
-                    : 'Hạn chế tính năng',
+                    ? AppStrings.scoreGood
+                    : AppStrings.scoreLimited,
             style: TextStyle(color: scoreColor, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 16),
-          _buildScoreAttribute('Không gian & Cảm biến', spatialScore, 60),
-          _buildScoreAttribute('Xử lý hình ảnh', processingScore, 25),
-          _buildScoreAttribute('Tương thích', compatScore, 15),
-          const Divider(color: Colors.white10),
+          _buildScoreAttribute(
+              AppStrings.scoreSpatial, spatialScore, 60, colorScheme),
+          _buildScoreAttribute(
+              AppStrings.scoreProcessing, processingScore, 25, colorScheme),
+          _buildScoreAttribute(
+              AppStrings.scoreCompat, compatScore, 15, colorScheme),
+          const Divider(),
           if (hasDepth)
-            _buildScoreBadge(Icons.check_circle, Colors.green, 'Hỗ trợ Depth'),
+            _buildScoreBadge(Icons.check_circle, const Color(0xFF22A06B),
+                AppStrings.scoreSupportDepth, colorScheme),
           if (hasIntrinsics)
-            _buildScoreBadge(
-                Icons.check_circle, Colors.green, 'Hỗ trợ Intrinsics'),
+            _buildScoreBadge(Icons.check_circle, const Color(0xFF22A06B),
+                AppStrings.scoreSupportIntrinsics, colorScheme),
         ],
       ),
     );
   }
 
-  Widget _buildScoreAttribute(String label, int value, int max) {
+  Widget _buildScoreAttribute(
+      String label, int value, int max, ColorScheme colorScheme) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white70)),
+          Text(label, style: TextStyle(color: colorScheme.onSurface)),
           Text('$value/$max',
-              style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.bold)),
+              style: TextStyle(
+                  color: colorScheme.onSurface, fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 
-  Widget _buildScoreBadge(IconData icon, Color color, String text) {
+  Widget _buildScoreBadge(
+      IconData icon, Color color, String text, ColorScheme colorScheme) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(icon, color: color, size: 16),
           const SizedBox(width: 8),
-          Text(text, style: const TextStyle(color: Colors.white70)),
+          Text(text, style: TextStyle(color: colorScheme.onSurface)),
         ],
       ),
     );

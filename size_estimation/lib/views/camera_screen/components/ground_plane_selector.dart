@@ -56,9 +56,8 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
                 widget.onStateChanged?.call(newPointA, newPointB);
 
                 // Notify completion
-                if (newPointA != null && newPointB != null) {
-                  widget.onPointsSelected?.call(newPointA, newPointB);
-                }
+                // Notify completion
+                widget.onPointsSelected?.call(newPointA, newPointB);
               }
             },
             child: Container(color: Colors.transparent),

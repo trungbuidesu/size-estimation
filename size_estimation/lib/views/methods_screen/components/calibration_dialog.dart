@@ -1,17 +1,12 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:size_estimation/models/calibration_profile.dart';
 
 class CalibrationDescDialog extends StatelessWidget {
   final VoidCallback? onConfirm;
-  final VoidCallback? onSelectProfile;
-  final CalibrationProfile? selectedProfile;
 
   const CalibrationDescDialog({
     super.key,
     this.onConfirm,
-    this.onSelectProfile,
-    this.selectedProfile,
   });
 
   @override
@@ -32,65 +27,18 @@ class CalibrationDescDialog extends StatelessWidget {
             width: double.maxFinite,
             child: CalibrationAnimation(),
           ),
-          const SizedBox(height: 16),
-          if (selectedProfile != null) ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          selectedProfile!.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          'Source: ${selectedProfile!.source}',
-                          style:
-                              const TextStyle(fontSize: 11, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          FilledButton.icon(
-            onPressed: onSelectProfile,
-            icon: const Icon(Icons.tune, size: 18),
-            label: Text(
-                selectedProfile == null ? 'Select Profile' : 'Change Profile'),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(double.infinity, 40),
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           const Text(
-            'Quy trình Custom Calibration (Dành cho Researcher):',
+            'Các bước Calibration',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
+          _buildStep(Icons.looks_one, 'Sử dụng bảng ChArUco.'),
           _buildStep(
-              Icons.looks_one, 'Sử dụng bảng Calibrate (Chessboard/Charuco).'),
-          _buildStep(
-              Icons.adb, 'Hệ thống tự động chạy thuật toán calibrateCamera.'),
+              Icons.adb, 'Hệ thống tự động chạy thuật toán calibrateCamera'),
           _buildStep(Icons.camera_alt,
-              'Chụp 20-40 ảnh ở nhiều góc độ và khoảng cách khác nhau.'),
+              'Chụp 20-40 ảnh ở nhiều góc độ và khoảng cách khác nhau'),
         ],
       ),
       actions: [

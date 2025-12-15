@@ -12,6 +12,7 @@ import 'package:size_estimation/models/estimation_mode.dart';
 import 'package:size_estimation/services/photogrammetry_service.dart';
 import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
+import 'package:size_estimation/views/shared_components/index.dart';
 import 'package:size_estimation/utils/index.dart';
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/views/camera_screen/components/information.dart';
@@ -102,26 +103,26 @@ class _CameraScreenState extends State<CameraScreen>
     const EstimationMode(
       type: EstimationModeType.groundPlane,
       icon: Icons.landscape,
-      label: "Ground Plane",
-      description: "Đo khoảng cách trên mặt phẳng ngang",
+      label: AppStrings.modeGroundPlane,
+      description: AppStrings.modeGroundPlaneDesc,
     ),
     const EstimationMode(
       type: EstimationModeType.planarObject,
       icon: Icons.crop_square,
-      label: "Planar Object",
-      description: "Đo kích thước vật phẳng với tham chiếu",
+      label: AppStrings.modePlanarObject,
+      description: AppStrings.modePlanarObjectDesc,
     ),
     const EstimationMode(
       type: EstimationModeType.singleView,
       icon: Icons.height,
-      label: "Vertical Object",
-      description: "Đo chiều cao vật thẳng đứng",
+      label: AppStrings.modeVerticalObject,
+      description: AppStrings.modeVerticalObjectDesc,
     ),
     const EstimationMode(
       type: EstimationModeType.multiFrame,
       icon: Icons.video_camera_back,
-      label: "Multi-frame",
-      description: "Đo từ nhiều frame để tăng độ chính xác",
+      label: AppStrings.modeMultiFrame,
+      description: AppStrings.modeMultiFrameDesc,
     ),
   ];
 
@@ -298,7 +299,7 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       _cameras = await availableCameras();
       if (_cameras == null || _cameras!.isEmpty) {
-        if (mounted) _showError('Không tìm thấy camera');
+        if (mounted) _showError(AppStrings.cameraNotFound);
         return;
       }
 
@@ -328,7 +329,7 @@ class _CameraScreenState extends State<CameraScreen>
         _isInitialized = true;
       });
     } catch (e) {
-      if (mounted) _showError('Lỗi khởi tạo camera: $e');
+      if (mounted) _showError('${AppStrings.initCameraError}$e');
     }
   }
 
@@ -404,8 +405,7 @@ class _CameraScreenState extends State<CameraScreen>
     // Check if full
     if (_capturedImages.length >= _requiredImages) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content:
-            Text('Đã đủ số lượng ảnh. Vui lòng xóa bớt hoặc nhấn Hoàn tất.'),
+        content: Text(AppStrings.maxImagesReached),
         duration: Duration(seconds: 2),
       ));
       return;
@@ -421,7 +421,7 @@ class _CameraScreenState extends State<CameraScreen>
       });
       */
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Vui lòng chọn chế độ đo trước khi chụp ảnh.'),
+        content: Text(AppStrings.selectModeRequired),
         backgroundColor: Colors.orange,
         duration: Duration(seconds: 2),
       ));
@@ -437,17 +437,12 @@ class _CameraScreenState extends State<CameraScreen>
     if (_selectedModeType == EstimationModeType.groundPlane) {
       if (_groundPointA == null || _groundPointB == null) {
         measurementReady = false;
-        missingPointsMsg = "Vui lòng chọn 2 điểm trên mặt đất.";
+        missingPointsMsg = AppStrings.selectPointsGround;
       }
     } else if (_selectedModeType == EstimationModeType.planarObject) {
       if (_currentPlanarMeasurement == null) {
         measurementReady = false;
-        missingPointsMsg = "Vui lòng chọn 4 góc của vật thể.";
-      }
-    } else if (_selectedModeType == EstimationModeType.singleView) {
-      if (_currentVerticalMeasurement == null) {
-        measurementReady = false;
-        missingPointsMsg = "Vui lòng chọn điểm đầu và chân vật thể.";
+        missingPointsMsg = AppStrings.selectPointsPlanar;
       }
     }
     // Multi-frame might behave differently (capture to measure?), but usually
@@ -494,7 +489,7 @@ class _CameraScreenState extends State<CameraScreen>
 
         if (!isStable) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Thiết bị đang rung. Vui lòng giữ chắc tay.'),
+            content: Text(AppStrings.deviceUnstable),
             duration: Duration(milliseconds: 1000),
             backgroundColor: Colors.orange,
           ));
@@ -504,7 +499,7 @@ class _CameraScreenState extends State<CameraScreen>
 
         if (!isLevel) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Thiết bị bị nghiêng. Vui lòng giữ cân bằng.'),
+            content: Text(AppStrings.deviceTilted),
             duration: Duration(milliseconds: 1000),
             backgroundColor: Colors.orange,
           ));
@@ -545,7 +540,7 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
     } catch (e) {
-      _showError('Lỗi chụp ảnh: $e');
+      _showError('${AppStrings.captureError}$e');
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
@@ -569,8 +564,7 @@ class _CameraScreenState extends State<CameraScreen>
     // High digital zoom can reduce image quality and SfM accuracy
     if (_currentZoom > 2.0) {
       warnings.add(
-          'Cảnh báo: Mức zoom hiện tại quá cao (${_currentZoom.toStringAsFixed(1)}x). '
-          'Ảnh có thể bị mờ, giảm độ chính xác SfM.');
+          '${AppStrings.zoomWarning} (${_currentZoom.toStringAsFixed(1)}x)');
     }
 
     // 4. Lighting (Heuristic)
@@ -582,28 +576,26 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _showWarningDetails(List<String> warnings) {
-    return showDialog(
+    return CommonAlertDialog.show(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Row(children: [
-          Icon(Icons.warning_amber, color: Colors.orange),
-          SizedBox(width: 8),
-          Text("Chất lượng ảnh kém")
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: warnings
-              .map((w) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text("• $w")))
-              .toList(),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text("Đã hiểu"))
-        ],
+      title: AppStrings.qualityWarningTitle,
+      icon: Icons.warning_amber,
+      iconColor: Colors.orange,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: warnings
+            .map((w) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text("• $w",
+                    style: const TextStyle(color: Colors.white70))))
+            .toList(),
       ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(AppStrings.understood))
+      ],
     );
   }
 
@@ -706,53 +698,55 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   void _showResultDialog(double height) {
-    showDialog(
+    CommonAlertDialog.show(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Kết quả'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 64),
-            const SizedBox(height: 16),
-            Text(
-              '${height.toStringAsFixed(2)} cm',
-              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-            ),
-            const Text('Chiều cao ước lượng'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              setState(() {
-                _capturedImages.clear();
-              });
-            },
-            child: const Text('Làm mới'),
+      title: AppStrings.resultTitle,
+      icon: Icons.check_circle,
+      iconColor: Colors.green,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            '${height.toStringAsFixed(2)} cm',
+            style: const TextStyle(
+                fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
           ),
+          Text(AppStrings.estimatedHeight,
+              style: TextStyle(color: Colors.white70)),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            setState(() {
+              _capturedImages.clear();
+            });
+          },
+          child: const Text(AppStrings.refresh),
+        ),
+      ],
     );
   }
 
   void _showErrorDetails(String error) {
-    showDialog(
+    CommonAlertDialog.show(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Lỗi'),
-        content: Text(error),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              // Do NOT clear images on error, allow user to delete/retry
-            },
-            child: const Text('Đóng'),
-          ),
-        ],
-      ),
+      title: AppStrings.errorTitle,
+      icon: Icons.error_outline,
+      iconColor: Colors.red,
+      contentText: error,
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            // Do NOT clear images on error, allow user to delete/retry
+          },
+          child: const Text(AppStrings.close),
+        ),
+      ],
     );
   }
 
@@ -783,7 +777,7 @@ class _CameraScreenState extends State<CameraScreen>
                       child: Row(
                         children: [
                           const Text(
-                            'Ảnh đã chụp',
+                            AppStrings.galleryTitle,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 20,

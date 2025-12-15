@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
+import 'package:size_estimation/views/shared_components/index.dart';
 
 class ProfileSelectionDialog extends StatefulWidget {
   final CalibrationProfile? currentProfile;
@@ -41,23 +42,21 @@ class _ProfileSelectionDialogState extends State<ProfileSelectionDialog> {
   }
 
   Future<void> _deleteProfile(CalibrationProfile profile) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await CommonAlertDialog.show<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Profile'),
-        content: Text('Are you sure you want to delete "${profile.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      title: 'Delete Profile',
+      contentText: 'Are you sure you want to delete "${profile.name}"?',
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          child: const Text('Delete'),
+        ),
+      ],
     );
 
     if (confirm == true) {
@@ -71,14 +70,9 @@ class _ProfileSelectionDialogState extends State<ProfileSelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.tune, color: Colors.blue),
-          SizedBox(width: 8),
-          Text('Select Calibration Profile'),
-        ],
-      ),
+    return CommonAlertDialog(
+      title: 'Select Calibration Profile',
+      icon: Icons.tune,
       content: SizedBox(
         width: double.maxFinite,
         child: _isLoading

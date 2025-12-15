@@ -1,12 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/views/camera_property/index.dart';
 import 'package:size_estimation/views/settings_screen/settings_screen.dart';
+
 import 'package:size_estimation/views/methods_screen/components/index.dart';
+import 'package:size_estimation/views/shared_components/index.dart';
 import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
 import 'package:size_estimation/views/calibration_playground/profile_selection_dialog.dart';
@@ -57,7 +57,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
       builder: (ctx) => const Center(child: CircularProgressIndicator()),
     );
 
-    String profileName = "Mặc định (Device Intrinsics)";
+    String profileName = AppStrings.defaultProfileName;
     Map<String, String> params = {};
     List<double>? distortion;
 
@@ -130,12 +130,12 @@ class _MethodsScreenState extends State<MethodsScreen> {
         }
 
         if (params.isEmpty) {
-          params['Status'] = "Không thể đọc thông số từ Camera API";
+          params['Status'] = AppStrings.statusCannotRead;
         }
       }
     } catch (e) {
       debugPrint("Error fetching params: $e");
-      params['Error'] = "Lỗi: ${e.toString()}";
+      params['Error'] = "${AppStrings.errorPrefix}${e.toString()}";
     } finally {
       // Close loading dialog
       if (mounted) Navigator.pop(context);
@@ -143,103 +143,110 @@ class _MethodsScreenState extends State<MethodsScreen> {
 
     if (!mounted) return;
 
-    showDialog(
+    CommonAlertDialog.show(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Row(
+      title: AppStrings.checkParams,
+      icon: Icons.settings_input_component,
+      iconColor: Colors.blue,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.settings_input_component, color: Colors.blue),
-            SizedBox(width: 8),
-            Text("Kiểm tra thông số"),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _useAdvancedCorrection
-                      ? Colors.orange.withOpacity(0.1)
-                      : Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                      color:
-                          _useAdvancedCorrection ? Colors.orange : Colors.blue),
-                ),
-                child: Text(
-                  profileName,
-                  style: TextStyle(
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                // ADS: Use subtle background for status/tags (N20 or Brand Light)
+                color: _useAdvancedCorrection
+                    ? Theme.of(context).colorScheme.tertiaryContainer
+                    : Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(4),
+                // Border is optional in ADS if background is distinct, but adding subtle border matches input style
+                border: Border.all(
                     color: _useAdvancedCorrection
-                        ? Colors.orange[800]
-                        : Colors.blue[800],
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
+                        ? Theme.of(context).colorScheme.tertiary
+                        : Theme.of(context).colorScheme.primary,
+                    width: 1),
+              ),
+              child: Text(
+                profileName,
+                style: TextStyle(
+                  color: _useAdvancedCorrection
+                      ? Theme.of(context).colorScheme.onTertiaryContainer
+                      : Theme.of(context).colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text("Intrinsics (Pinhole Model)",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const Divider(height: 8),
-              if (params.containsKey('Error'))
-                Text(params['Error']!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12))
-              else if (params.containsKey('Status'))
-                Text(params['Status']!,
-                    style: const TextStyle(
-                        fontStyle: FontStyle.italic, fontSize: 12))
-              else ...[
-                _buildParamRow("Focal Length X (fx)", params['fx'] ?? 'N/A'),
-                _buildParamRow("Focal Length Y (fy)", params['fy'] ?? 'N/A'),
-                _buildParamRow("Principal Point X (cx)", params['cx'] ?? 'N/A'),
-                _buildParamRow("Principal Point Y (cy)", params['cy'] ?? 'N/A'),
-                if (params.containsKey('s'))
-                  _buildParamRow("Skew (s)", params['s'] ?? 'N/A'),
-              ],
-              if (distortion != null && distortion.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text("Distortion (Radial)",
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                const Divider(height: 8),
-                Text(
-                  distortion.join(', '),
-                  style: const TextStyle(
-                      fontFamily: 'Courier',
-                      fontSize: 12,
-                      color: Colors.black87),
-                ),
-              ],
-              const SizedBox(height: 16),
-              const Text(
-                "Nhấn 'Bắt đầu' để sử dụng các thông số này.",
+            ),
+            const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            Text(AppStrings.intrinsicsHeader,
                 style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            Divider(height: 8, color: Theme.of(context).dividerTheme.color),
+            if (params.containsKey('Error'))
+              Text(params['Error']!,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.error, fontSize: 12))
+            else if (params.containsKey('Status'))
+              Text(params['Status']!,
+                  style: TextStyle(
+                      fontStyle: FontStyle.italic,
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant))
+            else ...[
+              _buildParamRow("Focal Length X (fx)", params['fx'] ?? 'N/A'),
+              _buildParamRow("Focal Length Y (fy)", params['fy'] ?? 'N/A'),
+              _buildParamRow("Principal Point X (cx)", params['cx'] ?? 'N/A'),
+              _buildParamRow("Principal Point Y (cy)", params['cy'] ?? 'N/A'),
+              if (params.containsKey('s'))
+                _buildParamRow("Skew (s)", params['s'] ?? 'N/A'),
+            ],
+            if (distortion != null && distortion.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text(AppStrings.distortionHeader,
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              Divider(height: 8, color: Theme.of(context).dividerTheme.color),
+              Text(
+                distortion.join(', '),
+                style: TextStyle(
+                    fontFamily: 'Courier',
                     fontSize: 12,
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ],
-          ),
+            const SizedBox(height: 16),
+            const Text(
+              AppStrings.startPrompt,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Quay lại"),
-          ),
-          FilledButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.push('/${RouteNames.camera}');
-            },
-            icon: const Icon(Icons.camera_alt),
-            label: const Text("Bắt đầu"),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(AppStrings.back),
+        ),
+        FilledButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+            context.push('/${RouteNames.camera}');
+          },
+          icon: const Icon(Icons.camera_alt),
+          label: const Text(AppStrings.start),
+        ),
+      ],
     );
   }
 
@@ -286,7 +293,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
     Navigator.of(context).maybePop();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Mở tutorial (TODO: liên kết tới màn hướng dẫn)'),
+        content: Text(AppStrings.tutorialTodo),
       ),
     );
   }
@@ -310,31 +317,27 @@ class _MethodsScreenState extends State<MethodsScreen> {
                 controller: controller,
                 children: [
                   const Text(
-                    'Nhiều ảnh từ các góc độ',
+                    AppStrings.multiImageTitle,
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    '- Chụp/tải nhiều ảnh ở các góc khác nhau.\n'
-                    '- Hệ thống xử lý ảnh để ước lượng kích thước/khối tích.\n'
-                    '- Hoạt động trên hầu hết thiết bị, không cần AR.',
+                    AppStrings.multiImageDesc,
                   ),
                   const SizedBox(height: 14),
                   const Text(
-                    'Mẹo nhanh:',
+                    AppStrings.quickTips,
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    '- Chụp 4-6 góc (trước/sau/trái/phải/chéo trên/dưới).\n'
-                    '- Đủ sáng, tránh bóng gắt.\n'
-                    '- Có vật chuẩn kích thước (thẻ, tờ A4) càng tốt.',
+                    AppStrings.quickTipsDesc,
                   ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: _onShowTutorial,
                     icon: const Icon(Icons.school_outlined),
-                    label: const Text('Xem hướng dẫn chi tiết'),
+                    label: const Text(AppStrings.viewDetailedGuide),
                   ),
                 ],
               ),
@@ -354,7 +357,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
       builder: (context) {
         return DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.7,
+          initialChildSize: 0.95,
           minChildSize: 0.5,
           maxChildSize: 0.95,
           builder: (context, controller) {
@@ -381,6 +384,27 @@ class _MethodsScreenState extends State<MethodsScreen> {
       return;
     }
 
+    // Check if there are any profiles available
+    final profiles = await _calibrationService.getAllProfiles();
+    if (profiles.isEmpty) {
+      if (!mounted) return;
+      CommonAlertDialog.show(
+        context: context,
+        title: AppStrings.noCalibrationData,
+        icon: Icons.warning_amber_rounded,
+        iconColor: Colors.orange,
+        content: const Text(AppStrings.noCalibrationContent),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text(AppStrings.understood),
+          ),
+        ],
+      );
+      // Switch remains off (false)
+      return;
+    }
+
     // Show profile selection dialog
     await _selectProfile();
   }
@@ -389,11 +413,11 @@ class _MethodsScreenState extends State<MethodsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chức năng chính'),
+        title: const Text(AppStrings.mainFunctions),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            tooltip: 'Cài đặt',
+            tooltip: AppStrings.settingsTooltip,
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
@@ -404,7 +428,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.perm_device_information),
-            tooltip: 'Thuộc tính Camera',
+            tooltip: AppStrings.cameraPropsTooltip,
             onPressed: _showCameraProperties,
           ),
         ],
@@ -419,36 +443,37 @@ class _MethodsScreenState extends State<MethodsScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Đo kích thước vật thể',
+                Text(
+                  AppStrings.measureObjectSize,
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: Colors.grey),
+                      color: Theme.of(context).colorScheme.primary),
                 ),
-                const SizedBox(height: 8),
-                const SizedBox(height: 8),
-                const SizedBox(height: 16),
                 _buildMethodCard(
                   context: context,
-                  title: 'Ước lượng bằng nhiều ảnh',
-                  subtitle: 'Chụp nhiều góc độ để xử lý.',
+                  title: AppStrings.estimateObjectSize,
+                  subtitle: AppStrings.estimateObjectSubtitle,
                   icon: Icons.photo_library_outlined,
                   onTap: _onSelectMultiImage,
                   onLongPress: _showMultiImageInfoSheet,
-                  cardColor: Theme.of(context)
-                      .colorScheme
-                      .tertiaryContainer
-                      .withOpacity(0.7),
-                  textColor: Theme.of(context).colorScheme.onTertiaryContainer,
+                  // ADS: Cards are clean (Surface color), actions text is Brand color
+                  cardColor: Theme.of(context).cardTheme.color ??
+                      Theme.of(context).colorScheme.surface,
+                  textColor: Theme.of(context).colorScheme.onSurface,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Flexible(
+                      Flexible(
                         child: Text(
-                          'Sử dụng hiệu chỉnh ảnh nâng cao',
+                          AppStrings.useAdvancedCorrection,
                           style: TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w500),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withOpacity(0.7)),
                         ),
                       ),
                       Switch(
@@ -459,12 +484,12 @@ class _MethodsScreenState extends State<MethodsScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  'Công cụ nâng cao',
+                Text(
+                  AppStrings.advancedTools,
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: Colors.grey),
+                      color: Theme.of(context).colorScheme.primary),
                 ),
                 const SizedBox(height: 8),
                 _buildCalibrationCard(context),
@@ -479,16 +504,15 @@ class _MethodsScreenState extends State<MethodsScreen> {
 
   Widget _buildCalibrationCard(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final backgroundColor = colorScheme.secondaryContainer.withOpacity(0.7);
-    final onBackgroundColor = colorScheme.onSecondaryContainer;
+    // ADS: Use neutral card background, borders handled by Theme
+    final backgroundColor = Theme.of(context).cardTheme.color;
+    final onBackgroundColor = colorScheme.onSurface;
 
     return Card(
       color: backgroundColor,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
-      ),
+      // Shape is handled by CardTheme (Rounded rect with subtle border)
+      margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -534,14 +558,15 @@ class _MethodsScreenState extends State<MethodsScreen> {
                 child: Row(
                   children: [
                     Icon(Icons.perm_data_setting_outlined,
-                        size: 32, color: onBackgroundColor),
+                        size: 32,
+                        color: colorScheme.primary), // Brand Blue Icon
                     const SizedBox(width: 16),
                     Expanded(
                       child: Text(
-                        'Hiệu chỉnh ảnh nâng cao',
+                        AppStrings.advancedCalibration,
                         style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 16, // Standard list item size
+                          fontWeight: FontWeight.w600,
                           color: onBackgroundColor,
                         ),
                       ),
@@ -550,7 +575,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
                       _isCalibrationExpanded
                           ? Icons.expand_less
                           : Icons.expand_more,
-                      color: onBackgroundColor,
+                      color: onBackgroundColor.withOpacity(0.7),
                     ),
                   ],
                 ),
@@ -558,69 +583,17 @@ class _MethodsScreenState extends State<MethodsScreen> {
             );
           }),
           if (_isCalibrationExpanded) ...[
-            Divider(color: onBackgroundColor.withOpacity(0.1), height: 1),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Switch to enable/disable Advanced Correction
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Use Advanced Correction',
-                              style: TextStyle(
-                                color: onBackgroundColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                            if (_selectedProfile != null)
-                              Text(
-                                'Profile: ${_selectedProfile!.name}',
-                                style: TextStyle(
-                                  color: onBackgroundColor.withOpacity(0.7),
-                                  fontSize: 12,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Switch(
-                        value: _useAdvancedCorrection,
-                        onChanged: _handleAdvancedSwitch,
-                        activeColor: Colors.blue,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Button to select profile
-                  if (_useAdvancedCorrection)
-                    OutlinedButton.icon(
-                      onPressed: _selectProfile,
-                      icon: const Icon(Icons.folder_open, size: 18),
-                      label: Text(_selectedProfile == null
-                          ? 'Select Profile'
-                          : 'Change Profile'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: onBackgroundColor,
-                        side: BorderSide(
-                            color: onBackgroundColor.withOpacity(0.3)),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  const Divider(height: 1),
-                  const SizedBox(height: 12),
                   const CalibrationDisplayWidget(),
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     onPressed: () => context.push('/calibration-playground'),
                     icon: const Icon(Icons.science),
-                    label: const Text('Calibration Playground'),
+                    label: const Text(AppStrings.calibrationPlayground),
                   )
                 ],
               ),
@@ -643,16 +616,12 @@ class _MethodsScreenState extends State<MethodsScreen> {
     Widget? child,
   }) {
     final isEnabled = onTap != null;
-    // Visually disable if not enabled
-    final effectiveBackgroundColor = isEnabled
-        ? cardColor
-        : Theme.of(context)
-            .colorScheme
-            .surfaceContainerHighest
-            .withOpacity(0.5);
+    final theme = Theme.of(context);
+
+    // ADS: Disabled state uses "Subtlest" text and lighter background if needed
     final effectiveTextColor = isEnabled
-        ? textColor
-        : Theme.of(context).colorScheme.onSurface.withOpacity(0.38);
+        ? theme.colorScheme.onSurface
+        : theme.colorScheme.onSurface.withOpacity(0.38);
 
     final content = Padding(
       padding: const EdgeInsets.all(16),
@@ -662,7 +631,10 @@ class _MethodsScreenState extends State<MethodsScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, size: 32, color: effectiveTextColor),
+              // ADS: Primary icons often use Brand color
+              Icon(icon,
+                  size: 32,
+                  color: isEnabled ? theme.primaryColor : effectiveTextColor),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -671,8 +643,8 @@ class _MethodsScreenState extends State<MethodsScreen> {
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                         color: effectiveTextColor,
                       ),
                     ),
@@ -680,8 +652,8 @@ class _MethodsScreenState extends State<MethodsScreen> {
                     Text(
                       subtitle,
                       style: TextStyle(
-                        fontSize: 13,
-                        color: effectiveTextColor.withOpacity(0.8),
+                        fontSize: 14,
+                        color: effectiveTextColor.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -698,7 +670,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  'Không khả dụng trên thiết bị này',
+                  AppStrings.notAvailable,
                   style: TextStyle(
                       color: effectiveTextColor.withOpacity(0.6),
                       fontWeight: FontWeight.bold,
@@ -709,7 +681,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: Icon(Icons.arrow_forward,
-                    color: effectiveTextColor.withOpacity(0.5)),
+                    color: theme.primaryColor), // Brand directional icon
               ),
           ],
         ],
@@ -717,14 +689,11 @@ class _MethodsScreenState extends State<MethodsScreen> {
     );
 
     return SizedBox(
-      height: 170,
+      height: 170, // Keep height consistent
       child: Card(
-        color: effectiveBackgroundColor,
-        elevation: isEnabled ? 2 : 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide.none,
-        ),
+        color: cardColor, // Uses standard neutral card color passed in
+        elevation: 0, // Flat
+        // Shape handled by Theme
         clipBehavior: Clip.antiAlias,
         child: isEnabled
             ? InkWell(
