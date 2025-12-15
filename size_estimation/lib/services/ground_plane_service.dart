@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:vector_math/vector_math_64.dart' as vm;
 import 'package:size_estimation/models/camera_metadata.dart';
 import 'package:size_estimation/services/imu_service.dart';
+import 'package:size_estimation/constants/index.dart';
 
 /// Result of ground plane measurement
 class GroundPlaneMeasurement {
@@ -152,9 +153,10 @@ class GroundPlaneService {
 
     // Normalize by w
     final w = p_prime.z;
-    if (w.abs() < 1e-10) {
+    if (w.abs() < GroundPlaneConfig.zeroEpsilon) {
       // Point at infinity, return far point
-      return vm.Vector2(1000, 1000);
+      return vm.Vector2(GroundPlaneConfig.infinityPointValue,
+          GroundPlaneConfig.infinityPointValue);
     }
 
     return vm.Vector2(p_prime.x / w, p_prime.y / w);
@@ -168,28 +170,31 @@ class GroundPlaneService {
     required double pitch,
   }) {
     // Base error from pixel uncertainty (assume ±2 pixels)
-    const pixelUncertainty = 2.0;
+    const pixelUncertainty = GroundPlaneConfig.pixelUncertainty;
     final pixelErrorRatio =
         pixelUncertainty / pixelDistance.clamp(1, double.infinity);
     final baseError = groundDistance * pixelErrorRatio;
 
     // Error increases with distance from camera
-    final distanceErrorFactor = 1.0 + (groundDistance / 10.0);
+    final distanceErrorFactor =
+        1.0 + (groundDistance / GroundPlaneConfig.distanceErrorDivider);
 
     // Error increases with camera tilt (pitch)
     final pitchDegrees = pitch.abs() * 180 / math.pi;
-    final pitchErrorFactor = 1.0 + (pitchDegrees / 45.0);
+    final pitchErrorFactor =
+        1.0 + (pitchDegrees / GroundPlaneConfig.pitchErrorDivider);
 
     // Combined error in meters
     final totalError = baseError * distanceErrorFactor * pitchErrorFactor;
 
     // Convert to cm and clamp to reasonable range
-    return (totalError * 100).clamp(0.5, 50.0);
+    return (totalError * 100).clamp(
+        GroundPlaneConfig.minErrorClampCm, GroundPlaneConfig.maxErrorClampCm);
   }
 
   /// Check if device orientation is suitable for ground plane measurement
   bool isOrientationSuitable(IMUOrientation orientation,
-      {double maxTiltDegrees = 10.0}) {
+      {double maxTiltDegrees = GroundPlaneConfig.maxTiltDegrees}) {
     final rollDeg = orientation.rollDegrees.abs();
     final pitchDeg = orientation.pitchDegrees.abs();
 

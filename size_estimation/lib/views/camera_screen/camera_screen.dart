@@ -127,6 +127,8 @@ class _CameraScreenState extends State<CameraScreen>
     ),
   ];
 
+  EstimationModeType? _selectedModeType; // Track selected mode
+
   // Hover detection for mode explanation
   Timer? _modeHoverTimer;
   int? _hoveredModeIndex;
@@ -140,11 +142,15 @@ class _CameraScreenState extends State<CameraScreen>
   bool _groundPlaneMode = false; // Ground plane measurement mode
   double _cameraHeightMeters = 1.5; // Default eye level
   GroundPlaneMeasurement? _currentMeasurement;
+  vm.Vector2? _groundPointA;
+  vm.Vector2? _groundPointB;
+  bool _isGroundPlaneResultVisible = true;
 
   // Planar Object Measurement
   bool _planarObjectMode = false; // Planar object measurement mode
   String? _referenceObject; // Reference object for scale (e.g., "A4 Paper")
   PlanarObjectMeasurement? _currentPlanarMeasurement;
+  bool _isPlanarResultVisible = true;
 
   // Vertical Object Measurement
   bool _verticalObjectMode = false;
@@ -406,6 +412,58 @@ class _CameraScreenState extends State<CameraScreen>
         content:
             Text('Đã đủ số lượng ảnh. Vui lòng xóa bớt hoặc nhấn Hoàn tất.'),
         duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+
+    // Enforce Mode Selection before first capture
+    if (_capturedImages.isEmpty && _selectedModeType == null) {
+      /*
+      // User requested to NOT show the selector automatically
+      setState(() {
+        _isModeSelectorVisible = true;
+        // ...
+      });
+      */
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vui lòng chọn chế độ đo trước khi chụp ảnh.'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+
+    // New: Check if measurement points are selected for the active mode
+    // We assume capture is "Start Recording" or "Capture Evidence".
+    // If the user wants to capture the measurement result, they must have measured first.
+    bool measurementReady = true;
+    String missingPointsMsg = "";
+
+    if (_selectedModeType == EstimationModeType.groundPlane) {
+      if (_groundPointA == null || _groundPointB == null) {
+        measurementReady = false;
+        missingPointsMsg = "Vui lòng chọn 2 điểm trên mặt đất.";
+      }
+    } else if (_selectedModeType == EstimationModeType.planarObject) {
+      if (_currentPlanarMeasurement == null) {
+        measurementReady = false;
+        missingPointsMsg = "Vui lòng chọn 4 góc của vật thể.";
+      }
+    } else if (_selectedModeType == EstimationModeType.singleView) {
+      if (_currentVerticalMeasurement == null) {
+        measurementReady = false;
+        missingPointsMsg = "Vui lòng chọn điểm đầu và chân vật thể.";
+      }
+    }
+    // Multi-frame might behave differently (capture to measure?), but usually
+    // user captures frames THEN processing happens.
+    // However, the request implies standard static measurement modes.
+
+    if (!measurementReady) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(missingPointsMsg),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 2),
       ));
       return;
     }
@@ -1103,17 +1161,23 @@ class _CameraScreenState extends State<CameraScreen>
         final height = await _showCameraHeightDialog();
         if (height != null) {
           setState(() {
+            _selectedModeType = type; // Set selected mode
             _cameraHeightMeters = height;
             _groundPlaneMode = true;
             _planarObjectMode = false;
             _verticalObjectMode = false;
             _currentMeasurement = null;
+            // Keep existing points if switching back? Or clear?
+            // Usually clearing is safer for new mode activation
+            _groundPointA = null;
+            _groundPointB = null;
           });
         }
         break;
 
       case EstimationModeType.planarObject:
         setState(() {
+          _selectedModeType = type; // Set selected mode
           _groundPlaneMode = false;
           _planarObjectMode = true;
           _verticalObjectMode = false;
@@ -1123,6 +1187,7 @@ class _CameraScreenState extends State<CameraScreen>
 
       case EstimationModeType.singleView:
         setState(() {
+          _selectedModeType = type; // Set selected mode
           _groundPlaneMode = false;
           _planarObjectMode = false;
           _verticalObjectMode = true;
@@ -1132,11 +1197,12 @@ class _CameraScreenState extends State<CameraScreen>
 
       case EstimationModeType.multiFrame:
         // Multi-frame mode can be combined with other modes
-        // For now, treat it as vertical object mode
         setState(() {
+          _selectedModeType = type; // Set selected mode
           _groundPlaneMode = false;
           _planarObjectMode = false;
-          _verticalObjectMode = true;
+          _verticalObjectMode =
+              true; // Use vertical mode UI for now? Or separate?
           _currentVerticalMeasurement = null;
         });
         break;
@@ -1332,6 +1398,7 @@ class _CameraScreenState extends State<CameraScreen>
         if (measurement != null) {
           setState(() {
             _currentMeasurement = measurement;
+            _isGroundPlaneResultVisible = true;
           });
           debugPrint(
               'Ground Plane Measurement: ${measurement.distanceCm.toStringAsFixed(1)} cm');
@@ -1437,6 +1504,8 @@ class _CameraScreenState extends State<CameraScreen>
         if (measurement != null) {
           setState(() {
             _currentPlanarMeasurement = measurement;
+            _isPlanarResultVisible = true;
+            _isProcessing = false;
           });
           debugPrint(
               'Planar Object: ${measurement.widthCm.toStringAsFixed(1)} × ${measurement.heightCm.toStringAsFixed(1)} cm');
@@ -1710,6 +1779,90 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
+          // 9. Ground Plane Selector (Measurement Mode) (Moved)
+          if (_groundPlaneMode &&
+              _controller != null &&
+              _controller!.value.isInitialized)
+            Positioned.fill(
+              child: GroundPlaneSelector(
+                imageSize: Size(
+                  _controller!.value.previewSize?.width.toDouble() ?? 1920,
+                  _controller!.value.previewSize?.height.toDouble() ?? 1080,
+                ),
+                measurement: _currentMeasurement,
+                showResult: _isGroundPlaneResultVisible,
+                onCloseResult: () =>
+                    setState(() => _isGroundPlaneResultVisible = false),
+                pointA: _groundPointA,
+                pointB: _groundPointB,
+                onStateChanged: (p1, p2) {
+                  setState(() {
+                    _groundPointA = p1;
+                    _groundPointB = p2;
+                    if (p1 == null || p2 == null) {
+                      _currentMeasurement = null;
+                    }
+                  });
+                },
+                onPointsSelected: (pointA, pointB) {
+                  _performGroundPlaneMeasurement(pointA, pointB);
+                },
+                onClear: () {
+                  setState(() {
+                    _currentMeasurement = null;
+                  });
+                },
+              ),
+            ),
+
+          // 10. Planar Object Selector (Measurement Mode) (Moved)
+          if (_planarObjectMode &&
+              _controller != null &&
+              _controller!.value.isInitialized)
+            Positioned.fill(
+              child: PlanarObjectSelector(
+                imageSize: Size(
+                  _controller!.value.previewSize?.width.toDouble() ?? 1920,
+                  _controller!.value.previewSize?.height.toDouble() ?? 1080,
+                ),
+                measurement: _currentPlanarMeasurement,
+                referenceObject: _referenceObject,
+                showResult: _isPlanarResultVisible,
+                onCloseResult: () =>
+                    setState(() => _isPlanarResultVisible = false),
+                onCornersSelected: (corners) {
+                  _performPlanarObjectMeasurement(corners);
+                },
+                onClear: () {
+                  setState(() {
+                    _currentPlanarMeasurement = null;
+                  });
+                },
+              ),
+            ),
+
+          // 11. Vertical Object Selector (Measurement Mode) (Moved)
+          if (_verticalObjectMode &&
+              _controller != null &&
+              _controller!.value.isInitialized)
+            Positioned.fill(
+              child: VerticalObjectSelector(
+                imageSize: Size(
+                  _controller!.value.previewSize?.width.toDouble() ?? 1920,
+                  _controller!.value.previewSize?.height.toDouble() ?? 1080,
+                ),
+                measurement: _currentVerticalMeasurement,
+                onPointsSelected: (top, bottom) {
+                  _performVerticalObjectMeasurement(top, bottom);
+                },
+                onClear: () {
+                  setState(() {
+                    _currentVerticalMeasurement = null;
+                  });
+                },
+              ),
+            ),
+
           // 2. Segmented Progress Indicator
           Positioned(
             top: 16,
@@ -1742,75 +1895,90 @@ class _CameraScreenState extends State<CameraScreen>
             top: 50,
             left: 0,
             right: 0,
-            child: IgnorePointer(
-              // Ignore pointer when in measurement mode to allow selector to receive touches
-              ignoring:
-                  _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new,
-                            color: Colors.white),
-                        onPressed: () => context.pop(),
-                      ),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.max,
-                          children: [
-                            if (_researcherConfig
-                                .showImuInfo) // Controlled by Researcher Mode
-                              StreamBuilder<StabilityMetrics>(
-                                  stream: _sensorService.stabilityStream,
-                                  initialData: StabilityMetrics(
-                                      stabilityScore: 1.0,
-                                      isLevel: true,
-                                      rollDegrees: 0,
-                                      isStable: true),
-                                  builder: (context, snapshot) {
-                                    if (!snapshot.hasData)
-                                      return const SizedBox(
-                                          height: 6, width: 100);
-                                    return SizedBox(
-                                        width: 120,
-                                        child: StabilityIndicator(
-                                            metrics: snapshot.data!));
-                                  }),
-                          ],
-                        ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new,
+                          color: Colors.white),
+                      onPressed: () => context.pop(),
+                    ),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.max,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.info_outline,
-                                color: Colors.white),
-                            onPressed: _showInformationScreen,
-                            tooltip: "Thông tin",
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.restart_alt,
-                                color: Colors.white),
-                            onPressed: _resetSession,
-                            tooltip: "Chụp lại từ đầu",
-                          ),
-                          IconButton(
-                            key: _settingsButtonKey,
-                            icon: Icon(
-                              _isSettingsOpen
-                                  ? Icons.settings
-                                  : Icons.settings_outlined,
-                              color: Colors.white,
-                            ),
-                            onPressed: _toggleSettings,
-                          ),
+                          if (_researcherConfig
+                              .showImuInfo) // Controlled by Researcher Mode
+                            StreamBuilder<StabilityMetrics>(
+                                stream: _sensorService.stabilityStream,
+                                initialData: StabilityMetrics(
+                                    stabilityScore: 1.0,
+                                    isLevel: true,
+                                    rollDegrees: 0,
+                                    isStable: true),
+                                builder: (context, snapshot) {
+                                  if (!snapshot.hasData)
+                                    return const SizedBox(
+                                        height: 6, width: 100);
+                                  return SizedBox(
+                                      width: 120,
+                                      child: StabilityIndicator(
+                                          metrics: snapshot.data!));
+                                }),
                         ],
-                      )
-                    ],
-                  ),
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_groundPlaneMode &&
+                            _currentMeasurement != null &&
+                            !_isGroundPlaneResultVisible)
+                          IconButton(
+                            icon: const Icon(Icons.analytics_outlined,
+                                color: Colors.white),
+                            onPressed: () => setState(
+                                () => _isGroundPlaneResultVisible = true),
+                            tooltip: "Hiện kết quả đo",
+                          ),
+                        if (_planarObjectMode &&
+                            _currentPlanarMeasurement != null &&
+                            !_isPlanarResultVisible)
+                          IconButton(
+                            icon: const Icon(Icons.analytics_outlined,
+                                color: Colors.white),
+                            onPressed: () =>
+                                setState(() => _isPlanarResultVisible = true),
+                            tooltip: "Hiện kết quả đo",
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.info_outline,
+                              color: Colors.white),
+                          onPressed: _showInformationScreen,
+                          tooltip: "Thông tin",
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.restart_alt,
+                              color: Colors.white),
+                          onPressed: _resetSession,
+                          tooltip: "Chụp lại từ đầu",
+                        ),
+                        IconButton(
+                          key: _settingsButtonKey,
+                          icon: Icon(
+                            _isSettingsOpen
+                                ? Icons.settings
+                                : Icons.settings_outlined,
+                            color: Colors.white,
+                          ),
+                          onPressed: _toggleSettings,
+                        ),
+                      ],
+                    )
+                  ],
                 ),
               ),
             ),
@@ -1821,100 +1989,116 @@ class _CameraScreenState extends State<CameraScreen>
             bottom: 0,
             left: 0,
             right: 0,
-            child: IgnorePointer(
-              // Ignore pointer when in measurement mode to allow selector to receive touches
-              ignoring:
-                  _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black87, Colors.transparent],
-                  ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black87, Colors.transparent],
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Capture Row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        // Gallery / Review Button
-                        GestureDetector(
-                          onTap:
-                              _capturedImages.isNotEmpty ? _openGallery : null,
-                          child: Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: Colors.black45,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: Colors.white.withOpacity(0.3)),
-                            ),
-                            child: _capturedImages.isNotEmpty
-                                ? Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      // Stack effect
-                                      if (_capturedImages.length > 1)
-                                        Transform.rotate(
-                                          angle: 0.2,
-                                          child: Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              image: DecorationImage(
-                                                image: FileImage(
-                                                    _capturedImages[
-                                                            _capturedImages
-                                                                    .length -
-                                                                2]
-                                                        .file),
-                                                fit: BoxFit.cover,
-                                                opacity: 0.6,
-                                              ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Capture Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Gallery / Review Button
+                      GestureDetector(
+                        onTap: _capturedImages.isNotEmpty ? _openGallery : null,
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: Colors.black45,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: Colors.white.withOpacity(0.3)),
+                          ),
+                          child: _capturedImages.isNotEmpty
+                              ? Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    // Stack effect
+                                    if (_capturedImages.length > 1)
+                                      Transform.rotate(
+                                        angle: 0.2,
+                                        child: Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            image: DecorationImage(
+                                              image: FileImage(_capturedImages[
+                                                      _capturedImages.length -
+                                                          2]
+                                                  .file),
+                                              fit: BoxFit.cover,
+                                              opacity: 0.6,
                                             ),
                                           ),
                                         ),
-                                      // Top Image
-                                      Container(
-                                        width: 48,
-                                        height: 48,
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          border: Border.all(
-                                              color: _capturedImages
-                                                      .last.hasWarnings
-                                                  ? Colors.orange
-                                                  : Colors.white,
-                                              width: _capturedImages
-                                                      .last.hasWarnings
-                                                  ? 2.5
-                                                  : 1.5),
-                                          image: DecorationImage(
-                                            image: FileImage(
-                                                _capturedImages.last.file),
-                                            fit: BoxFit.cover,
-                                          ),
+                                      ),
+                                    // Top Image
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                            color:
+                                                _capturedImages.last.hasWarnings
+                                                    ? Colors.orange
+                                                    : Colors.white,
+                                            width:
+                                                _capturedImages.last.hasWarnings
+                                                    ? 2.5
+                                                    : 1.5),
+                                        image: DecorationImage(
+                                          image: FileImage(
+                                              _capturedImages.last.file),
+                                          fit: BoxFit.cover,
                                         ),
                                       ),
-                                    ],
-                                  )
-                                : Icon(Icons.photo_library_outlined,
-                                    color: Colors.white.withOpacity(0.5)),
-                          ),
+                                    ),
+                                  ],
+                                )
+                              : Icon(Icons.photo_library_outlined,
+                                  color: Colors.white.withOpacity(0.5)),
                         ),
+                      ),
 
-                        // Capture Button
-                        GestureDetector(
-                          onTap: _captureImage,
+                      // Capture Button
+                      Builder(builder: (context) {
+                        // Check if mode is selected
+                        bool modeMissing = _capturedImages.isEmpty &&
+                            _selectedModeType == null;
+
+                        // Check if points are selected (Measurement done)
+                        bool measurementMissing = false;
+                        if (_selectedModeType ==
+                            EstimationModeType.groundPlane) {
+                          measurementMissing =
+                              _groundPointA == null || _groundPointB == null;
+                        } else if (_selectedModeType ==
+                            EstimationModeType.planarObject) {
+                          measurementMissing =
+                              _currentPlanarMeasurement == null;
+                        } else if (_selectedModeType ==
+                            EstimationModeType.singleView) {
+                          measurementMissing =
+                              _currentVerticalMeasurement == null;
+                        }
+
+                        final isCaptureDisabled =
+                            modeMissing || measurementMissing;
+
+                        return GestureDetector(
+                          onTap:
+                              _captureImage, // Logic inside handles the check
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
@@ -1923,17 +2107,25 @@ class _CameraScreenState extends State<CameraScreen>
                                 height: 80,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  border:
-                                      Border.all(color: Colors.white, width: 4),
+                                  border: Border.all(
+                                      color: isCaptureDisabled
+                                          ? Colors.grey
+                                          : Colors.white,
+                                      width: 4),
                                 ),
                                 child: Container(
                                   margin: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: Colors.white,
+                                    color: isCaptureDisabled
+                                        ? Colors.transparent
+                                        : Colors.white,
                                   ),
                                 ),
                               ),
+                              if (isCaptureDisabled)
+                                const Icon(Icons.block,
+                                    color: Colors.grey, size: 40),
                               if (_isCapturing)
                                 const SizedBox(
                                   width: 80,
@@ -1945,36 +2137,35 @@ class _CameraScreenState extends State<CameraScreen>
                                 ),
                             ],
                           ),
-                        ),
+                        );
+                      }),
 
-                        // Complete Button (Right Side)
-                        if (_capturedImages.length >= _requiredImages)
-                          GestureDetector(
-                            onTap: _showProcessDialog,
-                            child: Container(
-                              width: 56,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Theme.of(context).primaryColor,
-                                border:
-                                    Border.all(color: Colors.white, width: 2),
-                              ),
-                              child: const Icon(Icons.check,
-                                  color: Colors.white, size: 32),
+                      // Complete Button (Right Side)
+                      if (_capturedImages.length >= _requiredImages)
+                        GestureDetector(
+                          onTap: _showProcessDialog,
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Theme.of(context).primaryColor,
+                              border: Border.all(color: Colors.white, width: 2),
                             ),
-                          )
-                        else
-                          const SizedBox(width: 56),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Chụp 6 ảnh, di chuyển đều nhau',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
+                            child: const Icon(Icons.check,
+                                color: Colors.white, size: 32),
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 56),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Chụp 6 ảnh, di chuyển đều nhau',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2070,6 +2261,9 @@ class _CameraScreenState extends State<CameraScreen>
             multiFrameMode: _multiFrameMode,
             onMultiFrameModeChanged: (value) =>
                 setState(() => _multiFrameMode = value),
+            onShowMathDetails: () {
+              setState(() => _showMathDetails = !_showMathDetails);
+            },
           ),
 
           // 7. K Matrix Overlay (Researcher Mode)
@@ -2115,98 +2309,12 @@ class _CameraScreenState extends State<CameraScreen>
               currentDragPosition: _currentDragPosition,
               isVisible: true,
               modes: _selectorModes,
-              onModeSelected: (mode) {}, // Handled by gesture end
-            ),
-
-          // 8.2 Math Toggle Button
-          Positioned(
-            top: 50,
-            right: 120, // Next to Settings/K-matrix toggle usually?
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () =>
-                    setState(() => _showMathDetails = !_showMathDetails),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.black45,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white30, width: 1.5),
-                  ),
-                  child: const Icon(Icons.functions,
-                      color: Colors.white, size: 24),
-                ),
-              ),
-            ),
-          ),
-
-          // 9. Ground Plane Selector (Measurement Mode)
-          if (_groundPlaneMode &&
-              _controller != null &&
-              _controller!.value.isInitialized)
-            Positioned.fill(
-              child: GroundPlaneSelector(
-                imageSize: Size(
-                  _controller!.value.previewSize?.width.toDouble() ?? 1920,
-                  _controller!.value.previewSize?.height.toDouble() ?? 1080,
-                ),
-                measurement: _currentMeasurement,
-                onPointsSelected: (pointA, pointB) {
-                  _performGroundPlaneMeasurement(pointA, pointB);
-                },
-                onClear: () {
-                  setState(() {
-                    _currentMeasurement = null;
-                  });
-                },
-              ),
-            ),
-
-          // 10. Planar Object Selector (Measurement Mode)
-          if (_planarObjectMode &&
-              _controller != null &&
-              _controller!.value.isInitialized)
-            Positioned.fill(
-              child: PlanarObjectSelector(
-                imageSize: Size(
-                  _controller!.value.previewSize?.width.toDouble() ?? 1920,
-                  _controller!.value.previewSize?.height.toDouble() ?? 1080,
-                ),
-                measurement: _currentPlanarMeasurement,
-                referenceObject: _referenceObject,
-                onCornersSelected: (corners) {
-                  _performPlanarObjectMeasurement(corners);
-                },
-                onClear: () {
-                  setState(() {
-                    _currentPlanarMeasurement = null;
-                  });
-                },
-              ),
-            ),
-
-          // 11. Vertical Object Selector (Measurement Mode)
-          if (_verticalObjectMode &&
-              _controller != null &&
-              _controller!.value.isInitialized)
-            Positioned.fill(
-              child: VerticalObjectSelector(
-                imageSize: Size(
-                  _controller!.value.previewSize?.width.toDouble() ?? 1920,
-                  _controller!.value.previewSize?.height.toDouble() ?? 1080,
-                ),
-                measurement: _currentVerticalMeasurement,
-                onPointsSelected: (top, bottom) {
-                  _performVerticalObjectMeasurement(top, bottom);
-                },
-                onClear: () {
-                  setState(() {
-                    _currentVerticalMeasurement = null;
-                  });
-                },
-              ),
+              onModeSelected: (mode) {
+                final index = _selectorModes.indexOf(mode);
+                if (index != -1) {
+                  _showModeExplanation(index);
+                }
+              },
             ),
 
           // 12. Loading Overlay

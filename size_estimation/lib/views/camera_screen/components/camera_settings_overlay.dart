@@ -37,6 +37,7 @@ class CameraSettingsOverlay extends StatelessWidget {
   final VoidCallback? onShowKMatrix;
   final VoidCallback? onShowIMU;
   final VoidCallback? onCalibrationPlayground;
+  final VoidCallback? onShowMathDetails;
 
   // Ground Plane Measurement
   final bool? groundPlaneMode;
@@ -99,10 +100,11 @@ class CameraSettingsOverlay extends StatelessWidget {
     this.onVerticalObjectModeChanged,
     this.applyUndistortion,
     this.onUndistortionChanged,
-    this.edgeSnapping,
-    this.onEdgeSnappingChanged,
+    this.edgeSnapping, // Keep one
+    this.onEdgeSnappingChanged, // Keep one
     this.multiFrameMode,
     this.onMultiFrameModeChanged,
+    this.onShowMathDetails,
   });
 
   @override
@@ -358,6 +360,12 @@ class CameraSettingsOverlay extends StatelessWidget {
                                   "Calibration Playground",
                                   Icons.tune,
                                   onCalibrationPlayground,
+                                ),
+                                const SizedBox(height: 8),
+                                _buildActionButton(
+                                  "Math Details",
+                                  Icons.functions,
+                                  onShowMathDetails,
                                 ),
 
                                 const SizedBox(height: 16),

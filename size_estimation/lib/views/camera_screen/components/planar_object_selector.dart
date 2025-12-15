@@ -17,7 +17,12 @@ class PlanarObjectSelector extends StatefulWidget {
     this.measurement,
     this.onClear,
     this.referenceObject,
+    this.showResult = true,
+    this.onCloseResult,
   });
+
+  final bool showResult;
+  final VoidCallback? onCloseResult;
 
   @override
   State<PlanarObjectSelector> createState() => _PlanarObjectSelectorState();
@@ -25,6 +30,7 @@ class PlanarObjectSelector extends StatefulWidget {
 
 class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
   final List<vm.Vector2> _corners = [];
+  Offset _resultPosition = const Offset(20, 120); // Default top position
 
   @override
   Widget build(BuildContext context) {
@@ -117,32 +123,59 @@ class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
             ),
           ),
 
-        // Measurement result
-        if (widget.measurement != null)
+        if (widget.measurement != null && widget.showResult)
           Positioned(
-            bottom: 20,
-            left: 0,
-            right: 0,
-            child: Center(
+            top: _resultPosition.dy,
+            left: _resultPosition.dx,
+            child: GestureDetector(
+              onPanUpdate: (details) {
+                setState(() {
+                  _resultPosition += details.delta;
+                });
+              },
               child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                padding: const EdgeInsets.all(16),
+                width: 300, // Fixed width for consistent look
+                margin: const EdgeInsets.symmetric(horizontal: 0),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.purple, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.purple.withOpacity(0.3),
+                      blurRadius: 12,
+                      spreadRadius: 2,
+                    )
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'Planar Object Dimensions',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
+                    // Header with Close Button
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Planar Object Dimensions',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: widget.onCloseResult,
+                          child: const Padding(
+                            padding: EdgeInsets.all(4.0),
+                            child: Icon(Icons.close,
+                                color: Colors.white70, size: 18),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
+                    const Divider(color: Colors.white24, height: 12),
+                    const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [

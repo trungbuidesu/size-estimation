@@ -15,15 +15,25 @@ class GroundPlaneSelector extends StatefulWidget {
     this.onPointsSelected,
     this.measurement,
     this.onClear,
+    this.showResult = true,
+    this.onCloseResult,
+    this.pointA,
+    this.pointB,
+    this.onStateChanged,
   });
+
+  final bool showResult;
+  final VoidCallback? onCloseResult;
+  final vm.Vector2? pointA;
+  final vm.Vector2? pointB;
+  final Function(vm.Vector2?, vm.Vector2?)? onStateChanged;
 
   @override
   State<GroundPlaneSelector> createState() => _GroundPlaneSelectorState();
 }
 
 class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
-  vm.Vector2? _pointA;
-  vm.Vector2? _pointB;
+  Offset _resultPosition = const Offset(20, 160); // Default top position
 
   @override
   Widget build(BuildContext context) {
@@ -35,18 +45,19 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
             onTapDown: (details) {
               final localPosition = details.localPosition;
 
-              if (_pointA == null) {
-                setState(() {
-                  _pointA = vm.Vector2(localPosition.dx, localPosition.dy);
-                });
-              } else if (_pointB == null) {
-                setState(() {
-                  _pointB = vm.Vector2(localPosition.dx, localPosition.dy);
-                });
+              vm.Vector2? newPointA = widget.pointA;
+              vm.Vector2? newPointB = widget.pointB;
 
-                // Notify parent
-                if (_pointA != null && _pointB != null) {
-                  widget.onPointsSelected?.call(_pointA!, _pointB!);
+              if (newPointA == null) {
+                newPointA = vm.Vector2(localPosition.dx, localPosition.dy);
+                widget.onStateChanged?.call(newPointA, newPointB);
+              } else if (newPointB == null) {
+                newPointB = vm.Vector2(localPosition.dx, localPosition.dy);
+                widget.onStateChanged?.call(newPointA, newPointB);
+
+                // Notify completion
+                if (newPointA != null && newPointB != null) {
+                  widget.onPointsSelected?.call(newPointA, newPointB);
                 }
               }
             },
@@ -55,20 +66,20 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
         ),
 
         // Draw points and line
-        if (_pointA != null || _pointB != null)
+        if (widget.pointA != null || widget.pointB != null)
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
                 painter: _PointsPainter(
-                  pointA: _pointA,
-                  pointB: _pointB,
+                  pointA: widget.pointA,
+                  pointB: widget.pointB,
                 ),
               ),
             ),
           ),
 
         // Instruction text
-        if (_pointA == null)
+        if (widget.pointA == null)
           Positioned(
             top: 20,
             left: 0,
@@ -95,7 +106,7 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
             ),
           ),
 
-        if (_pointA != null && _pointB == null)
+        if (widget.pointA != null && widget.pointB == null)
           Positioned(
             top: 20,
             left: 0,
@@ -122,32 +133,58 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
             ),
           ),
 
-        // Measurement result
-        if (widget.measurement != null)
+        // Measurement result (Draggable)
+        if (widget.measurement != null && widget.showResult)
           Positioned(
-            bottom: 20,
-            left: 0,
-            right: 0,
-            child: Center(
+            top: _resultPosition.dy,
+            left: _resultPosition.dx,
+            child: GestureDetector(
+              onPanUpdate: (details) {
+                setState(() {
+                  _resultPosition += details.delta;
+                });
+              },
               child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
+                width: 250,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.green, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.green.withOpacity(0.3),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    )
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      'Ground Plane Distance',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
+                    // Header with Close
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Ground Plane Distance',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: widget.onCloseResult,
+                          child: const Padding(
+                            padding: EdgeInsets.all(4.0),
+                            child: Icon(Icons.close,
+                                color: Colors.white70, size: 18),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
+                    const Divider(color: Colors.white24, height: 12),
+                    const SizedBox(height: 4),
                     Text(
                       '${widget.measurement!.distanceCm.toStringAsFixed(1)} cm',
                       style: const TextStyle(
@@ -183,8 +220,7 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
             ),
           ),
 
-        // Clear button
-        if (_pointA != null || _pointB != null)
+        if (widget.pointA != null || widget.pointB != null)
           Positioned(
             top: 20,
             right: 20,
@@ -192,10 +228,7 @@ class _GroundPlaneSelectorState extends State<GroundPlaneSelector> {
               mini: true,
               backgroundColor: Colors.red,
               onPressed: () {
-                setState(() {
-                  _pointA = null;
-                  _pointB = null;
-                });
+                widget.onStateChanged?.call(null, null);
                 widget.onClear?.call();
               },
               child: const Icon(Icons.clear, color: Colors.white),
