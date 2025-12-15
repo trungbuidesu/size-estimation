@@ -14,7 +14,6 @@ typedef EstimateHeightC = Double Function(
   Double sensorHeight,
   Pointer<Double> distortionCoeffs,
   Int32 numDistortionCoeffs,
-  Pointer<Utf8> boundingBoxesJson, // NEW: JSON string of bounding boxes
 );
 
 // Define the Dart function signature
@@ -29,7 +28,6 @@ typedef EstimateHeightDart = double Function(
   double sensorHeight,
   Pointer<Double> distortionCoeffs,
   int numDistortionCoeffs,
-  Pointer<Utf8> boundingBoxesJson, // NEW
 );
 
 class PhotogrammetryBindings {
@@ -71,7 +69,6 @@ class PhotogrammetryBindings {
     double sensorWidth = 0.0,
     double sensorHeight = 0.0,
     List<double> distortionCoefficients = const [],
-    String? boundingBoxesJson, // NEW: Optional bounding boxes
   }) {
     if (_estimateHeight == null) {
       initialize();
@@ -88,14 +85,6 @@ class PhotogrammetryBindings {
     final distortionPtr = calloc<Double>(distortionCoefficients.length);
     for (int i = 0; i < distortionCoefficients.length; i++) {
       distortionPtr[i] = distortionCoefficients[i];
-    }
-
-    // Allocate memory for bounding boxes JSON
-    final Pointer<Utf8> boxesPtr;
-    if (boundingBoxesJson != null) {
-      boxesPtr = boundingBoxesJson.toNativeUtf8();
-    } else {
-      boxesPtr = nullptr;
     }
 
     try {
@@ -116,7 +105,6 @@ class PhotogrammetryBindings {
         sensorHeight,
         distortionPtr,
         distortionCoefficients.length,
-        boxesPtr, // NEW: Pass bounding boxes
       );
 
       return result;
@@ -127,8 +115,8 @@ class PhotogrammetryBindings {
       }
       calloc.free(pointerList);
       calloc.free(distortionPtr);
-      if (boxesPtr != nullptr) {
-        calloc.free(boxesPtr);
+      if (distortionPtr != nullptr) {
+        calloc.free(distortionPtr);
       }
     }
   }

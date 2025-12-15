@@ -1,7 +1,5 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:size_estimation/models/camera_intrinsics.dart';
-import 'package:size_estimation/models/bounding_box.dart';
 import 'package:size_estimation/bindings/index.dart';
 
 class PhotogrammetryService {
@@ -18,7 +16,6 @@ class PhotogrammetryService {
     required List<File> images,
     required double knownBaselineCm,
     required CameraIntrinsics intrinsics,
-    List<BoundingBox>? selectedBoxes,
     bool applyUndistortion = true,
   }) async {
     if (images.length < 2) {
@@ -27,13 +24,6 @@ class PhotogrammetryService {
 
     // Prepare paths
     final imagePaths = images.map((f) => f.path).toList();
-
-    // Serialize bounding boxes to JSON if provided
-    String? boundingBoxesJson;
-    if (selectedBoxes != null && selectedBoxes.isNotEmpty) {
-      final boxesData = selectedBoxes.map((box) => box.toJson()).toList();
-      boundingBoxesJson = jsonEncode(boxesData);
-    }
 
     // Call native binding in a compute isolate if needed,
     // but for now we'll call directly (blocking main thread is bad, but FFI is synchronous).
@@ -60,7 +50,6 @@ class PhotogrammetryService {
         sensorHeight: intrinsics.sensorHeight,
         distortionCoefficients:
             applyUndistortion ? intrinsics.distortionCoefficients : [],
-        boundingBoxesJson: boundingBoxesJson, // NEW: Pass bounding boxes
       );
 
       if (height < 0) {

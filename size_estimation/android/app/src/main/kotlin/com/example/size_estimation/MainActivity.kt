@@ -1,6 +1,6 @@
 package com.example.size_estimation
 
-import com.google.ar.core.ArCoreApk
+
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -13,8 +13,8 @@ import androidx.annotation.NonNull
 import org.opencv.android.OpenCVLoader
 
 class MainActivity: FlutterActivity() {
-    private val channelName = "com.example.size_estimation/arcore"
-    private var yoloDetector: YoloDetector? = null
+    private val channelName = "com.example.size_estimation/camera_utils"
+
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -26,36 +26,13 @@ class MainActivity: FlutterActivity() {
             android.util.Log.d("OpenCV", "OpenCV initialized successfully")
         }
         
-        // Initialize detector
-        try {
-            yoloDetector = YoloDetector(this, "yolov8n.tflite", "labels.txt")
-        } catch (e: Exception) {
-             android.util.Log.e("Yolo", "Failed to init detector: ${e.message}")
-        }
+
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "checkArSupport" -> {
-                        val availability = ArCoreApk.getInstance().checkAvailability(this)
-                        val supported = availability.isSupported && !availability.isTransient
-                        result.success(supported)
-                    }
-                    "detectObjects" -> {
-                        val imagePath = call.argument<String>("imagePath")
-                        if (imagePath != null && yoloDetector != null) {
-                            Thread {
-                                try {
-                                    val results = yoloDetector!!.detect(imagePath)
-                                    runOnUiThread { result.success(results) }
-                                } catch (e: Exception) {
-                                    runOnUiThread { result.error("DETECTION_ERROR", e.message, null) }
-                                }
-                            }.start()
-                        } else {
-                            result.error("ERROR", "Invalid path or detector not ready", null)
-                        }
-                    }
+
+
                     "getCameraProperties" -> {
                         try {
                             val cameraId = call.argument<String>("cameraId") ?: "0"
@@ -107,9 +84,18 @@ class MainActivity: FlutterActivity() {
                     }
                     "calibrateCamera" -> {
                         val imagePaths = call.argument<List<String>>("imagePaths")
+                        val targetType = call.argument<String>("targetType") ?: "Chessboard"
                         val boardWidth = call.argument<Int>("boardWidth") ?: 9
                         val boardHeight = call.argument<Int>("boardHeight") ?: 6
                         val squareSize = call.argument<Double>("squareSize")?.toFloat() ?: 25.0f
+                        
+                        // ChArUco Params
+                        val dictionaryId = call.argument<String>("dictionaryId") ?: "DICT_4x4"
+                        val startId = call.argument<Int>("startId") ?: 0
+                        
+                        // Note: For standard calibration logic, we might not strictly need mm dimensions other than squareSize,
+                        // unless we are doing something specific with board size validation or Aruco board creation.
+                        // I will pass them just in case.
                         
                         if (imagePaths == null || imagePaths.isEmpty()) {
                             result.error("INVALID_ARGS", "Image paths required", null)
@@ -123,7 +109,9 @@ class MainActivity: FlutterActivity() {
                                     imagePaths,
                                     boardWidth,
                                     boardHeight,
-                                    squareSize
+                                    squareSize,
+                                    targetType,
+                                    dictionaryId
                                 )
                                 
                                 val resultMap = hashMapOf<String, Any?>(
@@ -177,7 +165,6 @@ class MainActivity: FlutterActivity() {
     }
     
     override fun onDestroy() {
-        yoloDetector?.close()
         super.onDestroy()
     }
 }

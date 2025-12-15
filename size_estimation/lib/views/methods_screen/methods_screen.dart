@@ -19,10 +19,8 @@ class MethodsScreen extends StatefulWidget {
 }
 
 class _MethodsScreenState extends State<MethodsScreen> {
-  static const MethodChannel _arChannel =
-      MethodChannel('com.example.size_estimation/arcore');
-  bool _isCheckingSupport = false;
-  bool _isArSupported = false;
+  static const MethodChannel _cameraChannel =
+      MethodChannel('com.example.size_estimation/camera_utils');
   bool _useAdvancedCorrection = false;
   bool _isCalibrationExpanded = false;
   CalibrationProfile? _selectedProfile;
@@ -35,10 +33,8 @@ class _MethodsScreenState extends State<MethodsScreen> {
     super.dispose();
   }
 
-  @override
   void initState() {
     super.initState();
-    _detectArSupport();
     _loadActiveProfile();
   }
 
@@ -50,37 +46,6 @@ class _MethodsScreenState extends State<MethodsScreen> {
         _useAdvancedCorrection = true;
       });
     }
-  }
-
-  Future<void> _detectArSupport() async {
-    setState(() => _isCheckingSupport = true);
-
-    bool supported = false;
-    if (Platform.isAndroid) {
-      try {
-        final bool? result =
-            await _arChannel.invokeMethod<bool>('checkArSupport');
-        supported = result ?? false;
-      } on PlatformException catch (_) {
-        supported = false;
-      }
-    } else {
-      supported = false;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _isArSupported = supported;
-      _isCheckingSupport = false;
-    });
-  }
-
-  void _onSelectArCore() {
-    if (!_isArSupported) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Bắt đầu ước lượng bằng ARCore')),
-    );
-    // TODO: Điều hướng tới flow ARCore thực tế.
   }
 
   Future<void> _onSelectMultiImage() async {
@@ -110,7 +75,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
         }
       } else {
         // Fetch from Camera2 API via MethodChannel
-        final Map<dynamic, dynamic> result = await _arChannel
+        final Map<dynamic, dynamic> result = await _cameraChannel
             .invokeMethod('getCameraProperties', {'cameraId': '0'});
 
         final properties = result.cast<String, dynamic>();
@@ -326,60 +291,6 @@ class _MethodsScreenState extends State<MethodsScreen> {
     );
   }
 
-  void _showArInfoSheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.55,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          builder: (context, controller) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: ListView(
-                controller: controller,
-                children: [
-                  const Text(
-                    'ARCore (đo trực tiếp)',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '- Dựng mặt phẳng bằng cảm biến + camera.\n'
-                    '- Đo kích thước vật thể ngay trong không gian thực.\n'
-                    '- Cần thiết bị hỗ trợ ARCore và bật cảm biến chuyển động.',
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Mẹo nhanh:',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    '- Quét mặt phẳng kỹ trước khi đo.\n'
-                    '- Đủ sáng, giữ máy ổn định.\n'
-                    '- Chọn vật tham chiếu nếu có.',
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: _onShowTutorial,
-                    icon: const Icon(Icons.school_outlined),
-                    label: const Text('Xem hướng dẫn chi tiết'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   void _showMultiImageInfoSheet() {
     showModalBottomSheet<void>(
       context: context,
@@ -516,29 +427,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
                       color: Colors.grey),
                 ),
                 const SizedBox(height: 8),
-                _buildMethodCard(
-                  context: context,
-                  title: _isCheckingSupport
-                      ? 'Đang kiểm tra ARCore...'
-                      : _isArSupported
-                          ? 'Ước lượng bằng ARCore'
-                          : 'ARCore không khả dụng',
-                  subtitle: _isCheckingSupport
-                      ? 'Đang xác thực khả năng hỗ trợ...'
-                      : _isArSupported
-                          ? 'Thiết bị hỗ trợ. Đo trực tiếp.'
-                          : 'Thiết bị không hỗ trợ. Hãy dùng ảnh.',
-                  icon: Icons.view_in_ar,
-                  onTap: (_isArSupported && !_isCheckingSupport)
-                      ? _onSelectArCore
-                      : null,
-                  onLongPress: _showArInfoSheet,
-                  cardColor: Theme.of(context)
-                      .colorScheme
-                      .primaryContainer
-                      .withOpacity(0.7),
-                  textColor: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
+                const SizedBox(height: 8),
                 const SizedBox(height: 16),
                 _buildMethodCard(
                   context: context,

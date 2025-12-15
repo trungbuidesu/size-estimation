@@ -5,7 +5,7 @@ import 'package:size_estimation/models/calibration_profile.dart';
 /// Service to get camera metadata and compute dynamic intrinsics
 class CameraMetadataService {
   static const MethodChannel _channel =
-      MethodChannel('com.example.size_estimation/arcore');
+      MethodChannel('com.example.size_estimation/camera_utils');
 
   /// Get camera properties from Camera2 API
   Future<Map<String, dynamic>> getCameraProperties(

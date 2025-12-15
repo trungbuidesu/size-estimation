@@ -8,10 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:size_estimation/models/camera_intrinsics.dart';
 import 'package:size_estimation/models/captured_image.dart';
-import 'package:size_estimation/models/bounding_box.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
 import 'package:size_estimation/services/photogrammetry_service.dart';
-import 'package:size_estimation/services/mock_object_detection_service.dart';
 import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
 import 'package:size_estimation/utils/index.dart';
@@ -187,10 +185,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isProcessing = false; // Calculating height
   bool _isCapturing = false; // Taking photo
   // final PhotogrammetryService _service = PhotogrammetryService();
-  // final YoloObjectDetectionService _objectDetectionService =
-  //     YoloObjectDetectionService();
-  final MockObjectDetectionService _objectDetectionService =
-      MockObjectDetectionService();
+  // final PhotogrammetryService _service = PhotogrammetryService();
 
   // Settings State
   int _timerDuration = 0;
@@ -621,148 +616,15 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _showProcessDialog() async {
-    // Step 1: Detect objects
-    setState(() => _isProcessing = true);
-
-    // List<BoundingBox>? detectedBoxes; // Removed top-level declaration
-    List<BoundingBox>? selectedBoxes;
-
-    try {
-      // Show loading dialog
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const Center(
-          child: Card(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text('Đang phát hiện vật thể...'),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-
-      // Detect objects
-      final detectedBoxes =
-          await _objectDetectionService.detectObjects(_capturedImages);
-
-      // Close loading dialog
-      if (!mounted) return;
-      Navigator.pop(context);
-
-      // Check if any objects detected
-      if (detectedBoxes.isEmpty) {
-        if (!mounted) return;
-        await showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.warning, color: Colors.orange),
-                SizedBox(width: 8),
-                Text('Không tìm thấy vật thể'),
-              ],
-            ),
-            content: const Text(
-              'Không phát hiện được vật thể nào trong ảnh. '
-              'Vui lòng chụp lại với vật thể rõ ràng hơn hoặc tiếp tục mà không chọn vật thể.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  setState(() {
-                    _capturedImages.clear();
-                    _hasShownAutoWarning = false;
-                  });
-                },
-                child: const Text('Chụp lại'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  // Continue without object selection
-                  _showBaselineDialog(null);
-                },
-                child: const Text('Tiếp tục'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-
-      // Step 2: Show object selection dialog
-      if (!mounted) return;
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => ObjectSelectionDialog(
-          images: _capturedImages,
-          detectedBoxes: detectedBoxes,
-          enableEdgeSnapping: _researcherConfig.edgeBasedSnapping,
-          onConfirm: (boxes) {
-            selectedBoxes = boxes;
-          },
-        ),
-      );
-
-      // Check if user selected objects
-      if (selectedBoxes == null || selectedBoxes!.isEmpty) {
-        // User cancelled or didn't select anything
-        if (!mounted) return;
-        final shouldContinue = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Chưa chọn vật thể'),
-            content: const Text(
-              'Bạn chưa chọn vật thể nào. Tiếp tục mà không chọn vật thể có thể giảm độ chính xác.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Quay lại'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Tiếp tục'),
-              ),
-            ],
-          ),
-        );
-
-        if (shouldContinue != true) {
-          setState(() => _isProcessing = false);
-          return;
-        }
-      }
-
-      // Step 3: Show baseline input dialog
-      if (!mounted) return;
-      _showBaselineDialog(selectedBoxes);
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).popUntil((route) => route.isFirst);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Lỗi phát hiện vật thể: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
+    // Skip object detection and go straight to baseline input
+    if (!mounted) return;
+    _showBaselineDialog(null);
   }
 
-  Future<void> _showBaselineDialog(List<BoundingBox>? selectedBoxes) async {
+  Future<void> _showBaselineDialog(List<dynamic>? _) async {
+    // Note: Parameter kept to match signature if needed, or better remove it
+    // but simplifying to just void if possible. Let's do a clean void.
+    // Actually, I'll update the signature below.
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -783,15 +645,14 @@ class _CameraScreenState extends State<CameraScreen>
           },
           onSubmit: (baseline) {
             Navigator.pop(ctx);
-            _runPhotogrammetry(baseline, selectedBoxes);
+            _runPhotogrammetry(baseline);
           },
         );
       },
     );
   }
 
-  Future<void> _runPhotogrammetry(
-      double baseline, List<BoundingBox>? selectedBoxes) async {
+  Future<void> _runPhotogrammetry(double baseline) async {
     setState(() => _isProcessing = true);
 
     // Give UI a moment to render the loading state

@@ -24,9 +24,17 @@ class _CalibrationPlaygroundScreenState
   String? _errorMessage;
 
   // Chessboard parameters
-  int _boardWidth = 9;
-  int _boardHeight = 6;
-  double _squareSize = 25.0; // mm
+  // ChArUco parameters
+  final String _targetType = 'ChArUco';
+  int _boardWidth = 11; // Columns
+  int _boardHeight = 8; // Rows
+  double _squareSize = 15.0; // Checker Width (mm)
+
+  // Other image fields
+  double _boardWidthMm = 200.0;
+  double _boardHeightMm = 150.0;
+  String _dictionaryId = 'DICT_4x4';
+  int _startId = 0;
 
   Future<void> _pickImages() async {
     try {
@@ -39,7 +47,7 @@ class _CalibrationPlaygroundScreenState
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error picking images: $e';
+        _errorMessage = 'Lỗi khi chọn ảnh: $e';
       });
     }
   }
@@ -55,7 +63,7 @@ class _CalibrationPlaygroundScreenState
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error capturing image: $e';
+        _errorMessage = 'Lỗi khi chụp ảnh: $e';
       });
     }
   }
@@ -64,7 +72,7 @@ class _CalibrationPlaygroundScreenState
     if (_chessboardImages.length < 10) {
       setState(() {
         _errorMessage =
-            'Need at least 10 images for calibration. Current: ${_chessboardImages.length}';
+            'Cần ít nhất 10 hình ảnh để hiệu chuẩn. Hiện tại: ${_chessboardImages.length}';
       });
       return;
     }
@@ -75,15 +83,23 @@ class _CalibrationPlaygroundScreenState
     });
 
     try {
-      const platform = MethodChannel('com.example.size_estimation/arcore');
+      const platform =
+          MethodChannel('com.example.size_estimation/camera_utils');
 
       final imagePaths = _chessboardImages.map((f) => f.path).toList();
 
       final result = await platform.invokeMethod('calibrateCamera', {
         'imagePaths': imagePaths,
-        'boardWidth': _boardWidth,
-        'boardHeight': _boardHeight,
-        'squareSize': _squareSize,
+        'targetType': _targetType,
+        'boardWidth': _boardWidth, // Columns
+        'boardHeight': _boardHeight, // Rows
+        'squareSize': _squareSize, // Checker Width
+        'markerLength':
+            _squareSize * 0.8, // Estimate marker length (0.8 is common)
+        'boardWidthMm': _boardWidthMm,
+        'boardHeightMm': _boardHeightMm,
+        'dictionaryId': _dictionaryId,
+        'startId': _startId,
       });
 
       if (result['success'] == true) {
@@ -107,13 +123,13 @@ class _CalibrationPlaygroundScreenState
         });
       } else {
         setState(() {
-          _errorMessage = result['errorMessage'] ?? 'Calibration failed';
+          _errorMessage = result['errorMessage'] ?? 'Hiệu chuẩn thất bại';
           _isProcessing = false;
         });
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Calibration failed: $e';
+        _errorMessage = 'Hiệu chuẩn thất bại: $e';
         _isProcessing = false;
       });
     }
@@ -128,22 +144,22 @@ class _CalibrationPlaygroundScreenState
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Save Calibration Profile'),
+        title: const Text('Lưu Hồ Sơ Hiệu Chuẩn'),
         content: TextField(
           controller: nameController,
           decoration: const InputDecoration(
-            labelText: 'Profile Name',
-            hintText: 'e.g., My Custom Calibration',
+            labelText: 'Tên Hồ Sơ',
+            hintText: 'Ví dụ: Hiệu chuẩn của tôi',
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: const Text('Hủy'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save'),
+            child: const Text('Lưu'),
           ),
         ],
       ),
@@ -158,7 +174,7 @@ class _CalibrationPlaygroundScreenState
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Profile "${updatedProfile.name}" saved!')),
+          SnackBar(content: Text('Đã lưu hồ sơ "${updatedProfile.name}"!')),
         );
       }
     }
@@ -168,13 +184,13 @@ class _CalibrationPlaygroundScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Calibration Playground'),
+        title: const Text('Hiệu Chuẩn (Calibration)'),
         actions: [
           if (_calibratedProfile != null)
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: _saveProfile,
-              tooltip: 'Save Profile',
+              tooltip: 'Lưu Hồ Sơ',
             ),
         ],
       ),
@@ -183,6 +199,8 @@ class _CalibrationPlaygroundScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _buildCharucoSummary(),
+            const SizedBox(height: 16),
             _buildInstructions(),
             const SizedBox(height: 24),
             _buildChessboardSettings(),
@@ -216,17 +234,17 @@ class _CalibrationPlaygroundScreenState
                 Icon(Icons.info_outline, color: Colors.blue),
                 SizedBox(width: 8),
                 Text(
-                  'How to Calibrate',
+                  'Hướng Dẫn Hiệu Chuẩn',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            _buildStep('1', 'Print a chessboard pattern (9×6 or 7×5)'),
-            _buildStep('2',
-                'Capture 15-30 images from different angles and distances'),
-            _buildStep('3', 'Ensure the entire board is visible in each image'),
-            _buildStep('4', 'Tap "Run Calibration" to process'),
+            _buildStep('1', 'In mẫu ChArUco (ví dụ: 5x7 hoặc 8x11)'),
+            _buildStep(
+                '2', 'Chụp 15-30 ảnh từ các góc độ và khoảng cách khác nhau'),
+            _buildStep('3', 'Đảm bảo toàn bộ bảng đều nằm trong khung hình'),
+            _buildStep('4', 'Nhấn "Chạy Hiệu Chuẩn" để xử lý'),
           ],
         ),
       ),
@@ -272,8 +290,43 @@ class _CalibrationPlaygroundScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Chessboard Pattern',
+              'Cài Đặt Mục Tiêu',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Chiều Rộng Bảng [mm]',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    controller:
+                        TextEditingController(text: _boardWidthMm.toString()),
+                    onChanged: (v) =>
+                        _boardWidthMm = double.tryParse(v) ?? 200.0,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Chiều Cao Bảng [mm]',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    controller:
+                        TextEditingController(text: _boardHeightMm.toString()),
+                    onChanged: (v) =>
+                        _boardHeightMm = double.tryParse(v) ?? 150.0,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             Row(
@@ -281,21 +334,7 @@ class _CalibrationPlaygroundScreenState
                 Expanded(
                   child: TextField(
                     decoration: const InputDecoration(
-                      labelText: 'Width (corners)',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    keyboardType: TextInputType.number,
-                    controller:
-                        TextEditingController(text: _boardWidth.toString()),
-                    onChanged: (v) => _boardWidth = int.tryParse(v) ?? 9,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Height (corners)',
+                      labelText: 'Số Hàng',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -305,18 +344,60 @@ class _CalibrationPlaygroundScreenState
                     onChanged: (v) => _boardHeight = int.tryParse(v) ?? 6,
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Số Cột',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    controller:
+                        TextEditingController(text: _boardWidth.toString()),
+                    onChanged: (v) => _boardWidth = int.tryParse(v) ?? 9,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
             TextField(
               decoration: const InputDecoration(
-                labelText: 'Square Size (mm)',
+                labelText: 'Kích Thước Ô Vuông (mm)',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
               keyboardType: TextInputType.number,
               controller: TextEditingController(text: _squareSize.toString()),
               onChanged: (v) => _squareSize = double.tryParse(v) ?? 25.0,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: 'DICT_4x4',
+              decoration: const InputDecoration(
+                labelText: 'Từ Điển Marker',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'DICT_4x4', child: Text('DICT_4x4')),
+                DropdownMenuItem(value: 'DICT_5x5', child: Text('DICT_5x5')),
+                DropdownMenuItem(value: 'DICT_6x6', child: Text('DICT_6x6')),
+              ],
+              onChanged: (v) {
+                if (v != null) setState(() => _dictionaryId = v);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'ID Bắt Đầu',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              keyboardType: TextInputType.number,
+              controller: TextEditingController(text: "0"),
+              onChanged: (v) => _startId = int.tryParse(v) ?? 0,
             ),
           ],
         ),
@@ -335,7 +416,7 @@ class _CalibrationPlaygroundScreenState
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Images (${_chessboardImages.length})',
+                  'Hình Ảnh (${_chessboardImages.length})',
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.bold),
                 ),
@@ -344,12 +425,12 @@ class _CalibrationPlaygroundScreenState
                     IconButton(
                       icon: const Icon(Icons.camera_alt),
                       onPressed: _captureImage,
-                      tooltip: 'Capture',
+                      tooltip: 'Chụp ảnh',
                     ),
                     IconButton(
                       icon: const Icon(Icons.photo_library),
                       onPressed: _pickImages,
-                      tooltip: 'Pick from gallery',
+                      tooltip: 'Chọn từ thư viện',
                     ),
                   ],
                 ),
@@ -360,24 +441,28 @@ class _CalibrationPlaygroundScreenState
                 padding: EdgeInsets.all(32),
                 child: Center(
                   child: Text(
-                    'No images added yet',
+                    'Chưa có hình ảnh nào',
                     style: TextStyle(
                         color: Colors.grey, fontStyle: FontStyle.italic),
                   ),
                 ),
               )
             else
-              SizedBox(
-                height: 120,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
+              Container(
+                height: 300, // Fixed height for grid
+                margin: const EdgeInsets.only(top: 8),
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
                   itemCount: _chessboardImages.length,
                   itemBuilder: (context, index) {
                     return Stack(
+                      fit: StackFit.expand,
                       children: [
                         Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          width: 100,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(8),
                             image: DecorationImage(
@@ -388,7 +473,7 @@ class _CalibrationPlaygroundScreenState
                         ),
                         Positioned(
                           top: 4,
-                          right: 12,
+                          right: 4,
                           child: GestureDetector(
                             onTap: () {
                               setState(() {
@@ -429,7 +514,7 @@ class _CalibrationPlaygroundScreenState
                   strokeWidth: 2, color: Colors.white),
             )
           : const Icon(Icons.calculate),
-      label: Text(_isProcessing ? 'Processing...' : 'Run Calibration'),
+      label: Text(_isProcessing ? 'Đang xử lý...' : 'Chạy Hiệu Chuẩn'),
       style: FilledButton.styleFrom(
         padding: const EdgeInsets.all(16),
       ),
@@ -472,7 +557,7 @@ class _CalibrationPlaygroundScreenState
                 Icon(Icons.check_circle, color: Colors.green),
                 SizedBox(width: 8),
                 Text(
-                  'Calibration Complete',
+                  'Hiệu Chuẩn Hoàn Tất',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -485,7 +570,7 @@ class _CalibrationPlaygroundScreenState
             if (_calibratedProfile!.rmsError != null) ...[
               const Divider(),
               _buildResultRow(
-                'RMS Error',
+                'Sai số RMS',
                 '${_calibratedProfile!.rmsError!.toStringAsFixed(3)} px',
                 valueColor: _calibratedProfile!.rmsError! < 0.5
                     ? Colors.green
@@ -519,4 +604,142 @@ class _CalibrationPlaygroundScreenState
       ),
     );
   }
+
+  Widget _buildCharucoSummary() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.grid_4x4, color: Colors.purple),
+                SizedBox(width: 8),
+                Text(
+                  'ChArUco Board là gì?',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Bảng ChArUco là sự kết hợp giữa bàn cờ vua tiêu chuẩn và các điểm đánh dấu ArUco. '
+              'Các ô trắng của bàn cờ chứa các marker ArUco nhỏ. '
+              'Thiết kế lai này mang lại độ chính xác cao của việc phát hiện góc bàn cờ '
+              'cùng với sự mạnh mẽ của việc nhận dạng marker, cho phép hiệu chuẩn ngay cả khi bảng bị che khuất một phần.',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: Container(
+                width: 200,
+                height: 140,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  color: Colors.white,
+                ),
+                child: CustomPaint(
+                  painter: _CharucoPreviewPainter(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Center(
+              child: Text(
+                'Minh họa đơn giản',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.grey),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Giải thích thông số:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            _buildParamInfo(
+                'Bảng', 'Chiều rộng/cao vật lý của toàn bộ bảng giấy'),
+            _buildParamInfo(
+                'Hàng/Cột', 'Số lượng ô vuông theo chiều dọc/ngang'),
+            _buildParamInfo(
+                'Ô Vuông', 'Kích thước cạnh của một ô vuông đen/trắng'),
+            _buildParamInfo(
+                'Từ Điển', 'Bộ từ điển ArUco được sử dụng để tạo marker'),
+            _buildParamInfo(
+                'ID Bắt Đầu', 'ID của marker đầu tiên (thường là 0)'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildParamInfo(String label, String desc) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(fontSize: 12, color: Colors.black87),
+          children: [
+            TextSpan(
+                text: '• $label: ',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            TextSpan(text: desc),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CharucoPreviewPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paintBlack = Paint()..color = Colors.black;
+    final paintMarker = Paint()..color = Colors.black87;
+
+    double rows = 5;
+    double cols = 7;
+    double cellW = size.width / cols;
+    double cellH = size.height / rows;
+
+    for (int r = 0; r < rows; r++) {
+      for (int c = 0; c < cols; c++) {
+        // Chessboard logic: if (r+c) is even/odd
+        bool isBlack = (r + c) % 2 != 0;
+
+        if (isBlack) {
+          canvas.drawRect(
+              Rect.fromLTWH(c * cellW, r * cellH, cellW, cellH), paintBlack);
+        } else {
+          // White square -> Draw simulated Marker
+          // Marker is smaller square inside
+          double markerSize = cellW * 0.6;
+          double offsetX = (cellW - markerSize) / 2;
+          double offsetY = (cellH - markerSize) / 2;
+
+          // Draw outer black box of marker
+          canvas.drawRect(
+              Rect.fromLTWH(c * cellW + offsetX, r * cellH + offsetY,
+                  markerSize, markerSize),
+              paintMarker);
+
+          // Draw a tiny white dot to make it look like a marker
+          canvas.drawRect(
+              Rect.fromLTWH(
+                  c * cellW + offsetX + markerSize / 3,
+                  r * cellH + offsetY + markerSize / 3,
+                  markerSize / 3,
+                  markerSize / 3),
+              Paint()..color = Colors.white);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

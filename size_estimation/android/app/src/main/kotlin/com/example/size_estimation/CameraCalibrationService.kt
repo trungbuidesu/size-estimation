@@ -33,8 +33,19 @@ class CameraCalibrationService {
         imagePaths: List<String>,
         boardWidth: Int,
         boardHeight: Int,
-        squareSize: Float
+        squareSize: Float,
+        targetType: String = "Chessboard",
+        dictionaryId: String = "DICT_4x4"
     ): CalibrationResult {
+        if (targetType == "ChArUco") {
+             // TODO: Implement ChArUco calibration using Aruco module if available.
+             // Currently com.quickbirdstudios:opencv:4.5.3.0 does not typically include Aruco.
+             return CalibrationResult(
+                success = false,
+                errorMessage = "ChArUco calibration requires 'opencv-contrib' or a custom build with Aruco module. Only Chessboard is currently supported by the installed OpenCV library."
+             )
+        }
+
         try {
             val boardSize = Size(boardWidth.toDouble(), boardHeight.toDouble())
             val objectPoints = mutableListOf<Mat>()
