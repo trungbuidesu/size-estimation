@@ -14,21 +14,24 @@ class ModeExplanationDialog extends StatefulWidget {
 }
 
 class _ModeExplanationDialogState extends State<ModeExplanationDialog>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+    with TickerProviderStateMixin {
+  late AnimationController _entranceController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+
+  late AnimationController _loopController;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    // Entrance animations
+    _entranceController = AnimationController(
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
 
     _fadeAnimation = CurvedAnimation(
-      parent: _controller,
+      parent: _entranceController,
       curve: Curves.easeOut,
     );
 
@@ -36,80 +39,47 @@ class _ModeExplanationDialogState extends State<ModeExplanationDialog>
       begin: const Offset(0, 0.1),
       end: Offset.zero,
     ).animate(CurvedAnimation(
-      parent: _controller,
+      parent: _entranceController,
       curve: Curves.easeOutCubic,
     ));
 
-    _controller.forward();
+    _entranceController.forward();
+
+    // Looping animation for illustrations
+    _loopController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    )..repeat();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _entranceController.dispose();
+    _loopController.dispose();
     super.dispose();
   }
 
   Widget _buildIllustration() {
-    switch (widget.mode.type) {
-      case EstimationModeType.groundPlane:
-        return _buildGroundPlaneIllustration();
-      case EstimationModeType.planarObject:
-        return _buildPlanarObjectIllustration();
-      case EstimationModeType.singleView:
-        return _buildVerticalObjectIllustration();
-      case EstimationModeType.multiFrame:
-        return _buildMultiFrameIllustration();
-    }
-  }
-
-  Widget _buildGroundPlaneIllustration() {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 1200),
-      builder: (context, value, child) {
-        return CustomPaint(
-          size: const Size(200, 150),
-          painter: _GroundPlanePainter(progress: value),
-        );
-      },
-    );
-  }
-
-  Widget _buildPlanarObjectIllustration() {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 1200),
-      builder: (context, value, child) {
-        return CustomPaint(
-          size: const Size(200, 150),
-          painter: _PlanarObjectPainter(progress: value),
-        );
-      },
-    );
-  }
-
-  Widget _buildVerticalObjectIllustration() {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 1200),
-      builder: (context, value, child) {
-        return CustomPaint(
-          size: const Size(200, 150),
-          painter: _VerticalObjectPainter(progress: value),
-        );
-      },
-    );
-  }
-
-  Widget _buildMultiFrameIllustration() {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 1500),
-      builder: (context, value, child) {
-        return CustomPaint(
-          size: const Size(200, 150),
-          painter: _MultiFramePainter(progress: value),
-        );
+    return AnimatedBuilder(
+      animation: _loopController,
+      builder: (context, child) {
+        switch (widget.mode.type) {
+          case EstimationModeType.groundPlane:
+            return CustomPaint(
+              size: const Size(200, 150),
+              painter: _GroundPlanePainter(progress: _loopController.value),
+            );
+          case EstimationModeType.planarObject:
+            return CustomPaint(
+              size: const Size(200, 150),
+              painter: _PlanarObjectPainter(progress: _loopController.value),
+            );
+          case EstimationModeType.singleView:
+            return CustomPaint(
+              size: const Size(200, 150),
+              painter: _VerticalObjectPainter(progress: _loopController.value),
+            );
+        }
       },
     );
   }
@@ -132,152 +102,107 @@ class _ModeExplanationDialogState extends State<ModeExplanationDialog>
             '⬇️ Chọn điểm chân\n'
             '📏 Tính chiều cao thực tế\n'
             '⚙️ Cần: Chiều cao camera';
-      case EstimationModeType.multiFrame:
-        return 'Đo từ nhiều frame liên tiếp để tăng độ chính xác.\n\n'
-            '🎥 Giữ điểm đo trong 2-3 giây\n'
-            '📊 Hệ thống lấy trung bình\n'
-            '✨ Giảm nhiễu, tăng độ chính xác';
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Reuse structure similar to CommonAlertDialog but with custom content
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
         position: _slideAnimation,
         child: Dialog(
-          backgroundColor: Colors.transparent,
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 400),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFF1E1E1E),
-                  const Color(0xFF2D2D2D),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.1),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color(0xFF2196F3).withOpacity(0.2),
-                        Colors.transparent,
-                      ],
-                    ),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24),
-                      topRight: Radius.circular(24),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2196F3).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          widget.mode.icon,
-                          color: const Color(0xFF2196F3),
-                          size: 32,
-                        ),
+          // Theme properties are automatically picked up by Dialog if configured in AppTheme
+          // but we can be explicit to match exactly what CommonAlertDialog does if needed.
+          // AppTheme defines dialogTheme, so standard Dialog is good.
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Title with Icon corresponding to the mode
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.mode.label,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              widget.mode.description,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
+                      child: Icon(
+                        widget.mode.icon,
+                        color: theme.colorScheme.primary,
+                        size: 24,
                       ),
-                    ],
-                  ),
-                ),
-
-                // Illustration
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: _buildIllustration(),
-                ),
-
-                // Detailed explanation
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                  child: Text(
-                    _getDetailedExplanation(),
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 14,
-                      height: 1.5,
                     ),
-                  ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.mode.label,
+                            style: theme.dialogTheme.titleTextStyle ??
+                                theme.textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.mode.description,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color:
+                                  theme.colorScheme.onSurface.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
+              ),
 
-                // Close button
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
+              // Illustration
+              Container(
+                alignment: Alignment.center,
+                padding: const EdgeInsets.all(24),
+                child: _buildIllustration(),
+              ),
+
+              // Detailed explanation
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Text(
+                  _getDetailedExplanation(),
+                  style: theme.dialogTheme.contentTextStyle ??
+                      theme.textTheme.bodyMedium,
+                ),
+              ),
+
+              // Actions
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // Cancel button
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('Hủy'),
+                    ),
+                    const SizedBox(width: 12),
+                    // Confirm button
+                    FilledButton(
                       onPressed: () => Navigator.of(context).pop(true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2196F3),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Đã hiểu',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      child: const Text('Đã hiểu'),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -297,6 +222,10 @@ class _GroundPlanePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
+    // Use a cycle for smooth looping if desired, or simpler linear loop
+    // For visual breathing, maybe use a curve on the progress
+    // But passing raw progress is fine, we can manipulate it here.
+
     // Ground plane
     paint.color = Colors.white.withOpacity(0.3);
     canvas.drawLine(
@@ -309,16 +238,29 @@ class _GroundPlanePainter extends CustomPainter {
     final pointA = Offset(size.width * 0.3, size.height * 0.7);
     final pointB = Offset(size.width * 0.7, size.height * 0.7);
 
-    paint.color = const Color(0xFF2196F3);
+    paint.color = const Color(
+        0xFF579DFF); // Match primary color from theme roughly or use context if passed
     paint.style = PaintingStyle.fill;
     canvas.drawCircle(pointA, 6, paint);
     canvas.drawCircle(pointB, 6, paint);
 
-    // Distance line
-    if (progress > 0.3) {
+    // Distance line animation
+    // Loop: 0..0.5 draw line, 0.5..0.8 hold, 0.8..1.0 fade/reset
+    double lineProgress = 0.0;
+    if (progress < 0.5) {
+      lineProgress = progress / 0.5;
+    } else {
+      lineProgress = 1.0;
+    }
+
+    if (lineProgress > 0) {
       paint.style = PaintingStyle.stroke;
       paint.strokeWidth = 3;
-      final lineProgress = ((progress - 0.3) / 0.7).clamp(0.0, 1.0);
+      // Slight fade out at the end
+      if (progress > 0.8) {
+        paint.color = paint.color.withOpacity(1.0 - (progress - 0.8) * 5);
+      }
+
       canvas.drawLine(
         pointA,
         Offset.lerp(pointA, pointB, lineProgress)!,
@@ -342,7 +284,7 @@ class _PlanarObjectPainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
-      ..color = const Color(0xFF2196F3);
+      ..color = const Color(0xFF579DFF);
 
     // Rectangle (perspective)
     final corners = [
@@ -353,14 +295,32 @@ class _PlanarObjectPainter extends CustomPainter {
     ];
 
     // Draw rectangle with progress
+    // Loop: Draw segments sequentially
     final path = Path();
     path.moveTo(corners[0].dx, corners[0].dy);
+
+    // 0.0 to 0.8 draws the box. 0.8 to 1.0 fades/pauses.
+    double drawProgress = (progress / 0.8).clamp(0.0, 1.0);
+
+    // If we're in the fade out phase
+    if (progress > 0.8) {
+      paint.color = paint.color.withOpacity(1.0 - (progress - 0.8) * 5);
+    }
+
     for (int i = 1; i <= 4; i++) {
-      final segmentProgress = ((progress - i * 0.2) / 0.2).clamp(0.0, 1.0);
-      if (segmentProgress > 0) {
+      // 4 segments.
+      // 0.0 - 0.25 : seg 1
+      // 0.25 - 0.5 : seg 2, etc.
+      double startP = (i - 1) * 0.25;
+
+      if (drawProgress >= startP) {
+        // Calculate how much of this segment to draw
+        double localProgress = (drawProgress - startP) / 0.25;
+        if (localProgress > 1.0) localProgress = 1.0;
+
         final start = corners[i - 1];
         final end = corners[i % 4];
-        final current = Offset.lerp(start, end, segmentProgress)!;
+        final current = Offset.lerp(start, end, localProgress)!;
         path.lineTo(current.dx, current.dy);
       }
     }
@@ -369,6 +329,7 @@ class _PlanarObjectPainter extends CustomPainter {
     // Corner points
     paint.style = PaintingStyle.fill;
     for (var corner in corners) {
+      // Optional: animate points appearing
       canvas.drawCircle(corner, 5, paint);
     }
   }
@@ -406,10 +367,17 @@ class _VerticalObjectPainter extends CustomPainter {
     canvas.drawLine(bottom, top, paint);
 
     // Measurement line
-    if (progress > 0.2) {
-      paint.color = const Color(0xFF2196F3);
-      paint.strokeWidth = 3;
-      final lineProgress = ((progress - 0.2) / 0.8).clamp(0.0, 1.0);
+    // Loop: 0..0.6 animate up, 0.6..1.0 hold/reset
+
+    double lineProgress = (progress / 0.6).clamp(0.0, 1.0);
+
+    paint.color = const Color(0xFF579DFF); // Primary blue
+    if (progress > 0.8) {
+      paint.color = paint.color.withOpacity(1.0 - (progress - 0.8) * 5);
+    }
+    paint.strokeWidth = 3;
+
+    if (lineProgress > 0) {
       canvas.drawLine(
         bottom,
         Offset.lerp(bottom, top, lineProgress)!,
@@ -425,49 +393,5 @@ class _VerticalObjectPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_VerticalObjectPainter oldDelegate) =>
-      oldDelegate.progress != progress;
-}
-
-class _MultiFramePainter extends CustomPainter {
-  final double progress;
-
-  _MultiFramePainter({required this.progress});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    // Draw multiple frames
-    for (int i = 0; i < 3; i++) {
-      final frameProgress = ((progress - i * 0.2) / 0.6).clamp(0.0, 1.0);
-      if (frameProgress > 0) {
-        paint.color = Color(0xFF2196F3).withOpacity(0.3 + frameProgress * 0.7);
-        final offset = i * 15.0;
-        final rect = Rect.fromLTWH(
-          size.width * 0.2 + offset,
-          size.height * 0.2 + offset,
-          size.width * 0.5,
-          size.height * 0.5,
-        );
-        canvas.drawRect(rect, paint);
-      }
-    }
-
-    // Averaging indicator
-    if (progress > 0.8) {
-      paint.style = PaintingStyle.fill;
-      paint.color = const Color(0xFF4CAF50);
-      canvas.drawCircle(
-        Offset(size.width * 0.8, size.height * 0.3),
-        8,
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_MultiFramePainter oldDelegate) =>
       oldDelegate.progress != progress;
 }

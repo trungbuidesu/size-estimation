@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
+import 'package:size_estimation/views/camera_screen/components/mode_explanation_dialog.dart';
 
-class EstimationModeSelector extends StatelessWidget {
+class EstimationModeSelector extends StatefulWidget {
   final Offset center;
   final Offset currentDragPosition;
   final bool isVisible;
   final List<EstimationMode> modes;
   final ValueChanged<EstimationMode> onModeSelected;
+  final VoidCallback? onDwellStarted;
 
   const EstimationModeSelector({
     super.key,
@@ -16,90 +19,87 @@ class EstimationModeSelector extends StatelessWidget {
     required this.isVisible,
     required this.modes,
     required this.onModeSelected,
+    this.onDwellStarted,
   });
 
   @override
+  State<EstimationModeSelector> createState() => _EstimationModeSelectorState();
+}
+
+class _EstimationModeSelectorState extends State<EstimationModeSelector> {
+  int? _lastSelectedIndex;
+  bool _dialogShown = false;
+  static const double _itemHeight = 84.0; // Must match Painter
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  void _showModeExplanation(EstimationMode mode) async {
+    // Show dialog and wait for user response
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true, // Allow dismissing by tapping outside
+      builder: (context) => ModeExplanationDialog(mode: mode),
+    );
+
+    // Only trigger mode selection if user confirmed (pressed "Đã hiểu")
+    if (confirmed == true) {
+      widget.onModeSelected(mode);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!isVisible) return const SizedBox.shrink();
+    if (!widget.isVisible) {
+      _lastSelectedIndex = null;
+      _dialogShown = false;
+      return const SizedBox.shrink();
+    }
 
     // Calculate selection based on drag
-    final dx = currentDragPosition.dx - center.dx;
-    final dy = currentDragPosition.dy - center.dy;
-    final distance = sqrt(dx * dx + dy * dy);
-    final angle = atan2(dy, dx);
+    // Linear Mapping: DY -> Index
+    final dx = widget.currentDragPosition.dx - widget.center.dx;
+    final dy = widget.currentDragPosition.dy - widget.center.dy;
 
-    // Fan Logic for Selection Index mapping to Scroll Progress
-    // We want the list to scroll naturally as the user fans up/down (right side).
-    // Using 180 degrees (Semicircle) for balanced sensitivity.
-    const double totalSweep = 180 * (pi / 180);
-    const double startAngle = -totalSweep / 2;
-    final double segmentAngle = totalSweep / modes.length;
+    // Map DY to Index (List Logic)
+    // 0 aligns with Center.
+    double rawIndex = (dy / _itemHeight);
 
-    int selectedIndex = -1;
-    double scrollProgress = 0.0;
+    // Clamp selection to valid indices
+    int selectedIndex = rawIndex.round().clamp(0, widget.modes.length - 1);
 
-    if (distance > 20) {
-      // Normalize angle relative to start
-      double relative = angle - startAngle;
+    // Visual scroll follows finger
+    double scrollProgress = rawIndex.clamp(-0.5, widget.modes.length - 0.5);
 
-      // Calculate raw scroll progress
-      // (relative / segmentAngle) can be negative or > length
-      double rawProgress = (relative / segmentAngle);
+    // Reset Info Trigger if selection changes
+    if (selectedIndex != _lastSelectedIndex) {
+      _lastSelectedIndex = selectedIndex;
+      _dialogShown = false;
+    }
 
-      // Determine the logical selection (hard clamp for Logic)
-      if (angle >= startAngle && angle <= startAngle + totalSweep) {
-        selectedIndex = rawProgress.floor().clamp(0, modes.length - 1);
-      } else {
-        // If outside angular bounds, we might still want to select the closest one logic-wise?
-        // Current CameraScreen logic only selects if inside bounds. We'll stick to that visually for 'selected' state.
-        selectedIndex = -1;
-      }
-
-      // Visual Scroll Progress with Rubber Banding / Soft Limits
-      // Instead of hard clamp, we dampen the overflow.
-      if (rawProgress < 0) {
-        // Overshoot top
-        // f(x) = x * 0.3 for x < 0
-        scrollProgress = rawProgress * 0.3;
-      } else if (rawProgress > modes.length) {
-        // Overshoot bottom
-        double excess = rawProgress - modes.length;
-        scrollProgress = modes.length + (excess * 0.3);
-      } else {
-        // Within bounds
-        scrollProgress = rawProgress;
-      }
-
-      // Still apply a visual maximum limit so it doesn't fly off screen completely if user circles around
-      // But keep it responsive.
-      scrollProgress = scrollProgress.clamp(-1.0, modes.length + 1.0);
+    // Swipe Right Logic for Info
+    // Trigger if DX > Threshold (e.g. 100px)
+    if (dx > 100 && !_dialogShown) {
+      _dialogShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showModeExplanation(widget.modes[selectedIndex]);
+      });
     }
 
     return Stack(
       children: [
         CustomPaint(
           painter: _StaggeredListMenuPainter(
-            center: center,
-            modes: modes,
+            center: widget.center,
+            modes: widget.modes,
             selectedIndex: selectedIndex,
             scrollProgress: scrollProgress,
+            dwellIndex: null, // Removed dwell visual
+            theme: Theme.of(context),
           ),
           size: Size.infinite,
-        ),
-
-        // Center Anchor Indicator (optional, minimal)
-        Positioned(
-          left: center.dx - 10,
-          top: center.dy - 10,
-          child: Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.3),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-          ),
         ),
       ],
     );
@@ -111,25 +111,32 @@ class _StaggeredListMenuPainter extends CustomPainter {
   final List<EstimationMode> modes;
   final int selectedIndex;
   final double scrollProgress;
+  final int? dwellIndex;
+  final ThemeData theme;
 
   _StaggeredListMenuPainter({
     required this.center,
     required this.modes,
     required this.selectedIndex,
     required this.scrollProgress,
+    this.dwellIndex,
+    required this.theme,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Draw "Wheel" at center (2 concentric circles, no fill)
+    final colorScheme = theme.colorScheme;
+
+    // 1. Draw "Wheel" at center
     final Paint wheelPaint = Paint()
-      ..color = Colors.white
+      ..color = colorScheme.onSurface.withOpacity(0.3)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.5;
 
     // Outer ring
     canvas.drawCircle(center, 38.0, wheelPaint);
     // Inner ring
+    wheelPaint.color = colorScheme.onSurface.withOpacity(0.6);
     canvas.drawCircle(center, 30.0, wheelPaint);
 
     // 2. Draw Staggered List
@@ -138,10 +145,8 @@ class _StaggeredListMenuPainter extends CustomPainter {
       textAlign: TextAlign.start,
     );
 
-    const double itemHeight = 80.0;
-    // Shift list further right to avoid overlap.
-    // Since wheel radius is ~40, let's start list at x + 60 minimum.
-    const double baseXOffset = 70.0;
+    const double itemHeight = 84.0;
+    const double baseXOffset = 20.0;
     const double selectedXOffset = 30.0;
 
     for (int i = 0; i < modes.length; i++) {
@@ -154,25 +159,22 @@ class _StaggeredListMenuPainter extends CustomPainter {
       final double opacity = 0.4 + (0.6 * highlight);
       final double scale = 0.85 + (0.15 * highlight);
 
-      // Thò thụt: Selected moves right
       final double xShift = baseXOffset + (selectedXOffset * highlight);
 
       final double cx = center.dx + xShift;
       final double cy = center.dy + yOffset;
 
-      // Dimensions
+      final bool isDwelling = (dwellIndex != null && i == dwellIndex);
+
       final double widthBase = 260.0;
       final double widthExpand = 40.0;
       final double boxWidth = widthBase + (widthExpand * highlight);
-      final double boxHeight = 70.0;
+      final double boxHeight = 76.0;
 
       canvas.save();
       canvas.translate(cx, cy);
       canvas.scale(scale);
 
-      // Draw Card (Anchor Left Edge)
-      // Shift drawing so (0,0) is the Left-Center of the box
-      // This ensures the box grows to the right and doesn't overlap the wheel/left side
       final Rect drawRect =
           Rect.fromLTWH(0, -boxHeight / 2, boxWidth, boxHeight);
       final RRect rrect =
@@ -180,40 +182,59 @@ class _StaggeredListMenuPainter extends CustomPainter {
 
       final bool isTargeted = (i == selectedIndex);
 
-      if (highlight > 0.5) {
-        canvas.drawShadow(
-            Path()..addRRect(rrect), Colors.black, 4.0 * highlight, true);
+      // Shadow
+      if (highlight > 0.5 || isDwelling) {
+        canvas.drawShadow(Path()..addRRect(rrect), Colors.black,
+            isDwelling ? 8.0 : 4.0 * highlight, true);
       }
 
-      final Paint paint = Paint()
-        ..style = PaintingStyle.fill
-        ..color = isTargeted
-            ? const Color(0xFF2196F3).withOpacity(0.95)
-            : const Color(0xFF1E1E1E).withOpacity(0.85 * opacity);
+      final Paint paint = Paint()..style = PaintingStyle.fill;
 
+      // Card Background
+      if (isTargeted) {
+        paint.color = colorScheme.primary.withOpacity(0.95);
+      } else {
+        paint.color = theme.cardColor.withOpacity(0.9 * opacity);
+      }
       canvas.drawRRect(rrect, paint);
 
+      // Border
       paint
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isTargeted ? 2.0 : 1.0
-        ..color = Colors.white.withOpacity(isTargeted ? 1.0 : 0.3);
+        ..strokeWidth = isDwelling ? 2.5 : (isTargeted ? 1.5 : 0.5);
 
+      if (isDwelling) {
+        paint.color = colorScheme.secondary;
+      } else if (isTargeted) {
+        paint.color = colorScheme.onPrimary.withOpacity(0.5);
+      } else {
+        paint.color = colorScheme.outline.withOpacity(0.2);
+      }
       canvas.drawRRect(rrect, paint);
 
-      // Draw Content
-      _drawContent(
-          canvas, textPainter, modes[i], boxWidth, boxHeight, isTargeted);
+      // Content
+      _drawContent(canvas, textPainter, modes[i], boxWidth, boxHeight,
+          isTargeted, isDwelling, colorScheme);
 
       canvas.restore();
     }
   }
 
-  void _drawContent(Canvas canvas, TextPainter textPainter, EstimationMode mode,
-      double width, double height, bool isSelected) {
+  void _drawContent(
+      Canvas canvas,
+      TextPainter textPainter,
+      EstimationMode mode,
+      double width,
+      double height,
+      bool isSelected,
+      bool isDwelling,
+      ColorScheme colors) {
     const double padding = 16.0;
 
-    // Content is drawn relative to (0,0) which is now Left-Center of box
-    // So x starts at 0 + padding
+    final Color primaryColor = isSelected ? colors.onPrimary : colors.onSurface;
+    final Color secondaryColor = isSelected
+        ? colors.onPrimary.withOpacity(0.8)
+        : colors.onSurfaceVariant;
 
     // Icon
     final iconSpan = TextSpan(
@@ -222,31 +243,27 @@ class _StaggeredListMenuPainter extends CustomPainter {
         fontSize: 32,
         fontFamily: mode.icon.fontFamily,
         package: mode.icon.fontPackage,
-        color: isSelected ? Colors.white : Colors.white54,
+        color: secondaryColor,
       ),
     );
     textPainter.text = iconSpan;
     textPainter.layout();
-
     final double iconH = textPainter.height;
-    // Vertically center icon, align left
     textPainter.paint(canvas, Offset(padding, -iconH / 2));
 
     // Text Column
-    final double textLeft = padding + textPainter.width + 12;
-    // Width available = Total Width - LeftUsed - PaddingRight
+    final double textLeft = padding + textPainter.width + 16;
     final double maxTextWidth = width - textLeft - padding;
 
     // Title
     final labelSpan = TextSpan(
       text: mode.label,
       style: TextStyle(
-        color: isSelected ? Colors.white : Colors.white70,
+        color: primaryColor,
         fontWeight: FontWeight.bold,
         fontSize: 14,
       ),
     );
-
     textPainter.text = labelSpan;
     textPainter.layout(maxWidth: maxTextWidth);
     final double labelH = textPainter.height;
@@ -255,10 +272,9 @@ class _StaggeredListMenuPainter extends CustomPainter {
     final descSpan = TextSpan(
       text: mode.description,
       style: TextStyle(
-        color: isSelected ? Colors.blue.shade100 : Colors.white38,
-        fontWeight: FontWeight.normal,
-        fontSize: 10,
-        height: 1.1,
+        color: secondaryColor,
+        fontSize: 11,
+        height: 1.2,
       ),
     );
 
@@ -270,18 +286,19 @@ class _StaggeredListMenuPainter extends CustomPainter {
     );
     descPainter.layout(maxWidth: maxTextWidth);
 
-    // V-Center text block
-    final double totalTextH = labelH + descPainter.height + 2;
+    final double totalTextH = labelH + descPainter.height + 4;
     final double startY = -totalTextH / 2;
 
     textPainter.paint(canvas, Offset(textLeft, startY));
-    descPainter.paint(canvas, Offset(textLeft, startY + labelH + 2));
+    descPainter.paint(canvas, Offset(textLeft, startY + labelH + 4));
   }
 
   @override
   bool shouldRepaint(covariant _StaggeredListMenuPainter oldDelegate) {
     return oldDelegate.scrollProgress != scrollProgress ||
         oldDelegate.selectedIndex != selectedIndex ||
-        oldDelegate.center != center;
+        oldDelegate.dwellIndex != dwellIndex ||
+        oldDelegate.center != center ||
+        oldDelegate.theme != theme;
   }
 }

@@ -1,4 +1,4 @@
-export 'camera_settings_overlay.dart';
+export 'camera_settings_sidebar.dart';
 export 'capture_completion.dart';
 export 'overlap_guide.dart';
 export 'stability_indicator.dart';

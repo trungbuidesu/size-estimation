@@ -4,7 +4,6 @@ enum EstimationModeType {
   groundPlane,
   planarObject,
   singleView,
-  multiFrame,
 }
 
 class EstimationMode {

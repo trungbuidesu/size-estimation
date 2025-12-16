@@ -232,4 +232,21 @@ class AppStrings {
   static const String errorTitle = 'Lỗi';
 
   static const String galleryTitle = 'Ảnh đã chụp';
+
+  static const String multiFrameAveragingTitle = 'Trung bình đa khung hình';
+
+  static const String multiFrameAveragingProcess = '''
+Sử dụng video của nhiều khung hình để giảm nhiễu.
+
+Quy trình:
+1. Người dùng quay một video ngắn hoặc chụp nhiều khung hình.
+2. Theo dõi các điểm A, B qua các khung hình (sử dụng Lucas–Kanade hoặc khớp đặc trưng).
+3. Tính toán phép đo cho từng khung hình.
+4. Hợp nhất các kết quả (trung vị/trung bình) để loại bỏ các ngoại lệ.
+''';
+
+  static const String multiFrameAveragingBenefit = '''
+Lợi ích:
+Giảm tác động của nhiễu IMU, lỗi khi nhấp chuột và rung máy ảnh.
+''';
 }

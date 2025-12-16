@@ -300,9 +300,6 @@ class _IllustrationPainter extends CustomPainter {
       case EstimationModeType.singleView:
         _drawSingleView(canvas, size, center, t);
         break;
-      case EstimationModeType.multiFrame:
-        _drawMultiFrame(canvas, size, center, t);
-        break;
     }
   }
 
@@ -490,41 +487,6 @@ class _IllustrationPainter extends CustomPainter {
           textDirection: TextDirection.ltr);
       textP.layout();
       textP.paint(canvas, Offset(rulerX + 10, end.dy));
-    }
-  }
-
-  void _drawMultiFrame(Canvas canvas, Size size, Offset center, double t) {
-    // Logic: Object in center, cameras orbiting it.
-
-    // Central Object (Cube-ish)
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..color = Colors.white
-      ..strokeWidth = 2;
-    Rect box = Rect.fromCenter(center: center, width: 40, height: 40);
-    canvas.drawRect(box, paint);
-    canvas.drawLine(box.topLeft, box.bottomRight, paint);
-    canvas.drawLine(box.topRight, box.bottomLeft, paint);
-
-    // Orbiting Cameras
-    double r = 60;
-    int camCount = 3;
-    for (int i = 0; i < camCount; i++) {
-      double angle = (t * 2 * math.pi) + (i * (2 * math.pi / camCount));
-
-      double cx = center.dx + r * math.cos(angle);
-      double cy = center.dy +
-          r * math.sin(angle) * 0.4; // Elliptical orbit (perspective)
-
-      // Draw Camera Icon
-      paint.color = Colors.greenAccent;
-      paint.style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(cx, cy), 8, paint);
-
-      // Frustum lines to center
-      paint.strokeWidth = 1;
-      paint.color = Colors.greenAccent.withOpacity(0.3);
-      canvas.drawLine(Offset(cx, cy), center, paint);
     }
   }
 
