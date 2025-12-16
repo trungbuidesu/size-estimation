@@ -39,22 +39,6 @@ class CameraSettingsOverlay extends StatelessWidget {
   final VoidCallback? onCalibrationPlayground;
   final VoidCallback? onShowMathDetails;
 
-  // Ground Plane Measurement
-  final bool? groundPlaneMode;
-  final ValueChanged<bool>? onGroundPlaneModeChanged;
-  final double? cameraHeightMeters;
-  final ValueChanged<double>? onCameraHeightChanged;
-
-  // Planar Object Measurement
-  final bool? planarObjectMode;
-  final ValueChanged<bool>? onPlanarObjectModeChanged;
-  final String? referenceObject;
-  final ValueChanged<String?>? onReferenceObjectChanged;
-
-  // Vertical Object Measurement
-  final bool? verticalObjectMode;
-  final ValueChanged<bool>? onVerticalObjectModeChanged;
-
   // Advanced Processing
   final bool? applyUndistortion;
   final ValueChanged<bool>? onUndistortionChanged;
@@ -88,16 +72,6 @@ class CameraSettingsOverlay extends StatelessWidget {
     this.onShowKMatrix,
     this.onShowIMU,
     this.onCalibrationPlayground,
-    this.groundPlaneMode,
-    this.onGroundPlaneModeChanged,
-    this.cameraHeightMeters,
-    this.onCameraHeightChanged,
-    this.planarObjectMode,
-    this.onPlanarObjectModeChanged,
-    this.referenceObject,
-    this.onReferenceObjectChanged,
-    this.verticalObjectMode,
-    this.onVerticalObjectModeChanged,
     this.applyUndistortion,
     this.onUndistortionChanged,
     this.edgeSnapping, // Keep one
@@ -409,140 +383,6 @@ class CameraSettingsOverlay extends StatelessWidget {
                                 const SizedBox(height: 16),
                                 const Divider(height: 1, color: Colors.white24),
                                 const SizedBox(height: 16),
-
-                                // Measurement Modes (Debug/Researcher Only)
-                                const Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text("MEASUREMENT MODES (DEBUG)",
-                                      style: TextStyle(
-                                          color: Colors.white54,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 10)),
-                                ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  "Use swipe gesture on camera screen to activate modes",
-                                  style: TextStyle(
-                                    color: Colors.white38,
-                                    fontSize: 10,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-
-                                // Ground Plane Mode (Debug Info Only)
-                                if (groundPlaneMode != null &&
-                                    onGroundPlaneModeChanged != null)
-                                  _buildResearcherSwitch(
-                                      "Ground Plane Mode (Debug)",
-                                      groundPlaneMode!, (v) {
-                                    onGroundPlaneModeChanged!(v);
-                                  }),
-
-                                // Camera Height Input (Only if ground plane is active)
-                                if (groundPlaneMode == true &&
-                                    cameraHeightMeters != null &&
-                                    onCameraHeightChanged != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    child: Row(
-                                      children: [
-                                        const Text(
-                                          "Camera Height:",
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Slider(
-                                            value: cameraHeightMeters!,
-                                            min: 0.1,
-                                            max: 3.0,
-                                            divisions: 29,
-                                            label:
-                                                '${cameraHeightMeters!.toStringAsFixed(1)}m',
-                                            onChanged: onCameraHeightChanged,
-                                          ),
-                                        ),
-                                        Text(
-                                          '${cameraHeightMeters!.toStringAsFixed(1)}m',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                // Planar Object Mode (Debug Info Only)
-                                if (planarObjectMode != null &&
-                                    onPlanarObjectModeChanged != null)
-                                  _buildResearcherSwitch(
-                                      "Planar Object Mode (Debug)",
-                                      planarObjectMode!, (v) {
-                                    onPlanarObjectModeChanged!(v);
-                                  }),
-
-                                // Reference Object Selector (Only if planar mode is active)
-                                if (planarObjectMode == true &&
-                                    referenceObject != null &&
-                                    onReferenceObjectChanged != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          "Reference Object:",
-                                          style: TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        DropdownButton<String?>(
-                                          value: referenceObject,
-                                          isExpanded: true,
-                                          dropdownColor:
-                                              const Color(0xFF181818),
-                                          style: const TextStyle(
-                                              color: Colors.white),
-                                          items: [
-                                            const DropdownMenuItem(
-                                              value: null,
-                                              child: Text('None (Auto-detect)'),
-                                            ),
-                                            ...[
-                                              'A4 Paper',
-                                              'A5 Paper',
-                                              'Letter Paper',
-                                              'Credit Card',
-                                              'iPhone 14',
-                                              'iPad'
-                                            ].map((ref) => DropdownMenuItem(
-                                                  value: ref,
-                                                  child: Text(ref),
-                                                )),
-                                          ],
-                                          onChanged: onReferenceObjectChanged,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                // Vertical Object Mode (Debug Info Only)
-                                if (verticalObjectMode != null &&
-                                    onVerticalObjectModeChanged != null)
-                                  _buildResearcherSwitch(
-                                      "Vertical Object Mode (Debug)",
-                                      verticalObjectMode!, (v) {
-                                    onVerticalObjectModeChanged!(v);
-                                  }),
                               ]
                             ],
                           ),

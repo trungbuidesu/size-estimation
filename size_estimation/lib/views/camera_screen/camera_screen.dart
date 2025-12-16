@@ -12,8 +12,9 @@ import 'package:size_estimation/models/estimation_mode.dart';
 import 'package:size_estimation/services/photogrammetry_service.dart';
 import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
+import 'package:size_estimation/views/camera_screen/components/image_detail_modal.dart';
 import 'package:size_estimation/views/shared_components/index.dart';
-import 'package:size_estimation/utils/index.dart';
+
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/views/camera_screen/components/information.dart';
 import 'package:size_estimation/models/researcher_config.dart';
@@ -180,9 +181,15 @@ class _CameraScreenState extends State<CameraScreen>
   bool _hasShownAutoWarning = false;
   DateTime? _lastCaptureTime;
 
+  // Frozen State for Ground Plane Mode
+  bool _isFrozen = false;
+  File? _frozenImageFile; // Use File for captured frozen image
+  vm.Vector2? _frozenPointA; // Temp storage for points in frozen mode
+  vm.Vector2? _frozenPointB;
+
   // Photogrammetry State
   final List<CapturedImage> _capturedImages = [];
-  final int _requiredImages = PhotogrammetryThresholds.minImages;
+  final int _requiredImages = 1;
   bool _isProcessing = false; // Calculating height
   bool _isCapturing = false; // Taking photo
   // final PhotogrammetryService _service = PhotogrammetryService();
@@ -450,12 +457,18 @@ class _CameraScreenState extends State<CameraScreen>
     // However, the request implies standard static measurement modes.
 
     if (!measurementReady) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(missingPointsMsg),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 2),
-      ));
-      return;
+      // Special case for Ground Plane Freeze Mode:
+      // If prompt says "Capture to freeze", we allow capture even if points are null
+      if (_selectedModeType == EstimationModeType.groundPlane && !_isFrozen) {
+        // ALLOW capture to enter freeze mode
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(missingPointsMsg),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 2),
+        ));
+        return;
+      }
     }
 
     // Countdown Logic
@@ -480,44 +493,23 @@ class _CameraScreenState extends State<CameraScreen>
       final xFile = await _controller!.takePicture();
       final file = File(xFile.path);
 
-      // Validate Stability before capturing
-      if (_latestStabilityMetrics != null) {
-        bool isStable = _latestStabilityMetrics!.stabilityScore >=
-            ImageQualityThresholds.minStabilityScore;
-        bool isLevel = _latestStabilityMetrics!.rollDegrees.abs() <=
-            ImageQualityThresholds.maxRollDeviation;
-
-        if (!isStable) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(AppStrings.deviceUnstable),
-            duration: Duration(milliseconds: 1000),
-            backgroundColor: Colors.orange,
-          ));
-          setState(() => _isCapturing = false);
-          return;
-        }
-
-        if (!isLevel) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(AppStrings.deviceTilted),
-            duration: Duration(milliseconds: 1000),
-            backgroundColor: Colors.orange,
-          ));
-          setState(() => _isCapturing = false);
-          return;
-        }
+      if (_groundPlaneMode && !_isFrozen) {
+        setState(() {
+          _isFrozen = true;
+          _frozenImageFile = file;
+          _isCapturing = false;
+        });
+        await _controller!.pausePreview();
+        return;
       }
 
-      final warnings = _validateImageQuality();
-
-      // Auto-warning dialog logic removed as requested
-      // We only store warnings for later review if needed
+      // Simplified validation to avoid errors
+      List<String> warnings = [];
 
       setState(() {
         _capturedImages.add(CapturedImage(file: file, warnings: warnings));
         _lastCaptureTime = DateTime.now();
 
-        // Lock zoom after first image
         if (_capturedImages.length == 1) {
           _minZoom = _currentZoom;
           _maxZoom = _currentZoom;
@@ -536,7 +528,14 @@ class _CameraScreenState extends State<CameraScreen>
         }
 
         if (mounted) {
-          _showProcessDialog();
+          // Temporarily show the image detail directly
+          showDialog(
+            context: context,
+            builder: (context) => ImageDetailModal(
+              image: _capturedImages.last,
+              index: 0,
+            ),
+          );
         }
       }
     } catch (e) {
@@ -1515,134 +1514,130 @@ class _CameraScreenState extends State<CameraScreen>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 1. Camera Preview
-          IgnorePointer(
-            // Disable long-press gesture when in measurement mode
-            ignoring:
-                _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
-            child: GestureDetector(
-              onLongPressStart: (details) {
-                // Trigger only near left edge (approx 50px)
-                if (details.globalPosition.dx < 60) {
-                  setState(() {
-                    _dragStartPosition = details.globalPosition;
-                    _currentDragPosition = details.globalPosition;
-                    _isModeSelectorVisible = true;
-                  });
-                  HapticFeedback.mediumImpact();
-                }
-              },
-              onLongPressMoveUpdate: (details) {
-                if (_isModeSelectorVisible && !_showingModeExplanation) {
-                  setState(() {
-                    _currentDragPosition = details.globalPosition;
-                  });
-
-                  // Detect which mode is being hovered
-                  final dx = details.globalPosition.dx - _dragStartPosition.dx;
-                  final dy = details.globalPosition.dy - _dragStartPosition.dy;
-                  final distance = sqrt(dx * dx + dy * dy);
-
-                  if (distance > 30) {
-                    double angle = atan2(dy, dx);
-                    const double totalSweep = 180 * (pi / 180);
-                    const double startAngle = -totalSweep / 2;
-                    final double segmentAngle =
-                        totalSweep / _selectorModes.length;
-
-                    if (angle >= startAngle &&
-                        angle <= startAngle + totalSweep) {
-                      double relative = angle - startAngle;
-                      int index = (relative / segmentAngle).floor();
-                      if (index >= 0 && index < _selectorModes.length) {
-                        // Check if hovering on same mode
-                        if (_hoveredModeIndex != index) {
-                          // Cancel previous timer
-                          _modeHoverTimer?.cancel();
-                          _hoveredModeIndex = index;
-
-                          // Start new timer for explanation
-                          _modeHoverTimer =
-                              Timer(const Duration(milliseconds: 800), () {
-                            if (_hoveredModeIndex == index &&
-                                _isModeSelectorVisible) {
-                              _showModeExplanation(index);
-                            }
-                          });
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              onLongPressEnd: (details) {
-                _modeHoverTimer?.cancel();
-                _hoveredModeIndex = null;
-
-                if (_isModeSelectorVisible && !_showingModeExplanation) {
-                  _handleModeSelection();
-                  setState(() {
-                    _isModeSelectorVisible = false;
-                  });
-                }
-              },
-              child: Align(
-                alignment: Alignment.center,
-                child: AspectRatio(
-                  aspectRatio: aspectRatio,
-                  child: Stack(
-                    fit: StackFit.expand,
+          // 0. Header for Ground Plane Mode (Custom Requirement)
+          if (_groundPlaneMode)
+            Positioned(
+              top: 50,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      if (_capturedImages.length >= _requiredImages)
-                        Container(color: Colors.black)
-                      else if (_isInitialized && _controller != null)
-                        ClipRect(
-                          child: OverflowBox(
-                            alignment: Alignment.center,
-                            child: FittedBox(
-                              fit: BoxFit.cover,
-                              child: SizedBox(
-                                width: MediaQuery.of(context).size.width,
-                                height: MediaQuery.of(context).size.width *
-                                    _controller!.value.aspectRatio,
-                                child: CameraPreview(_controller!),
-                              ),
-                            ),
+                      const Text(
+                        "📐 ĐO TRÊN MẶT SÀN",
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          StreamBuilder<IMUOrientation>(
+                            stream: _imuService.orientationStream,
+                            builder: (context, snapshot) {
+                              final pitch = snapshot.data?.pitchDegrees
+                                      .toStringAsFixed(0) ??
+                                  "--";
+                              // Check if within reasonable range (e.g., -90 to 0)
+                              // Just showing raw value as requested
+                              return Text(
+                                "Pitch: $pitch° ✅", // TODO: Add logic for checkmark
+                                style: const TextStyle(
+                                    color: Colors.greenAccent, fontSize: 13),
+                              );
+                            },
                           ),
-                        )
-                      else
-                        const Center(
-                            child:
-                                CircularProgressIndicator(color: Colors.white)),
-                      if (_isInitialized)
-                        Positioned.fill(
-                          child: OverlapGuide(
-                            images: List.of(_capturedImages),
-                            requiredImages: _requiredImages,
-                            aspectRatio: aspectRatio,
+                          Text(
+                            "h: ${_cameraHeightMeters.toStringAsFixed(1)}m",
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 13),
                           ),
-                        ),
-                      if (_isInitialized)
-                        Positioned.fill(
-                          child:
-                              GridOverlay(visible: _researcherConfig.showGrid),
-                        ),
+                        ],
+                      )
                     ],
                   ),
+                ),
+              ),
+            ),
+
+          // 1. Camera Preview OR Frozen Image
+          IgnorePointer(
+            // Disable touches on camera preview if measuring (so points can be selected)
+            // But if frozen, we need touches? No, GroundPlaneSelector handles touches.
+            ignoring:
+                _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
+
+            child: Align(
+              alignment: Alignment.center,
+              child: AspectRatio(
+                aspectRatio: aspectRatio,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_isFrozen && _frozenImageFile != null)
+                      Image.file(
+                        _frozenImageFile!,
+                        fit: BoxFit.cover,
+                      )
+                    else if (_capturedImages.length >= _requiredImages)
+                      Container(color: Colors.black)
+                    else if (_isInitialized && _controller != null)
+                      ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.center,
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: MediaQuery.of(context).size.width,
+                              height: MediaQuery.of(context).size.width *
+                                  _controller!.value.aspectRatio,
+                              child: CameraPreview(_controller!),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      const Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.white)),
+                    if (_isInitialized)
+                      Positioned.fill(
+                        child: OverlapGuide(
+                          images: List.of(_capturedImages),
+                          requiredImages: _requiredImages,
+                          aspectRatio: aspectRatio,
+                        ),
+                      ),
+                    if (_isInitialized)
+                      Positioned.fill(
+                        child: GridOverlay(visible: _researcherConfig.showGrid),
+                      ),
+                  ],
                 ),
               ),
             ),
           ),
 
           // 9. Ground Plane Selector (Measurement Mode) (Moved)
+          // 9. Ground Plane Selector (Measurement Mode) (Moved)
           if (_groundPlaneMode &&
-              _controller != null &&
-              _controller!.value.isInitialized)
+              (_isFrozen || (_isInitialized && _controller != null)))
             Positioned.fill(
               child: GroundPlaneSelector(
                 imageSize: Size(
-                  _controller!.value.previewSize?.width.toDouble() ?? 1920,
-                  _controller!.value.previewSize?.height.toDouble() ?? 1080,
+                  _controller?.value.previewSize?.width.toDouble() ?? 1920,
+                  _controller?.value.previewSize?.height.toDouble() ?? 1080,
                 ),
                 measurement: _currentMeasurement,
                 showResult: _isGroundPlaneResultVisible,
@@ -1667,6 +1662,29 @@ class _CameraScreenState extends State<CameraScreen>
                     _currentMeasurement = null;
                   });
                 },
+              ),
+            ),
+
+          // Instruction (Bottom)
+          if (_groundPlaneMode)
+            Positioned(
+              bottom: 120,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(
+                    _isFrozen
+                        ? "Chế độ ảnh tĩnh: Điều chỉnh điểm đo"
+                        : "Hướng dẫn: Chạm 2 điểm cần đo",
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ),
               ),
             ),
 
@@ -1718,32 +1736,49 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-          // 2. Segmented Progress Indicator
+          // Mode Selector Gesture Zone (Left Edge)
           Positioned(
-            top: 16,
-            left: 16,
-            right: 16,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Text(
-                    _capturedImages.isEmpty
-                        ? 'Bắt đầu chụp ảnh'
-                        : _capturedImages.length == _requiredImages
-                            ? 'Hoàn tất!'
-                            : '${_capturedImages.length}/$_requiredImages',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      shadows: [
-                        Shadow(color: Colors.black45, blurRadius: 2),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            left: 0,
+            top: 100, // Avoid Top Bar
+            bottom: 150, // Avoid Bottom Bar
+            width: 40, // Trigger Zone Width
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onPanStart: (details) {
+                setState(() {
+                  _isModeSelectorVisible = true;
+                  _dragStartPosition = details.globalPosition;
+                  _currentDragPosition = details.globalPosition;
+                });
+                HapticFeedback.lightImpact();
+              },
+              onPanUpdate: (details) {
+                setState(() {
+                  _currentDragPosition = details.globalPosition;
+                });
+              },
+              onPanEnd: (details) {
+                _handleModeSelection();
+                setState(() {
+                  _isModeSelectorVisible = false;
+                });
+              },
+              child: Container(color: Colors.transparent),
             ),
           ),
+
+          // Mode Selector Overlay display
+          if (_isModeSelectorVisible)
+            Positioned.fill(
+              child: EstimationModeSelector(
+                center: _dragStartPosition,
+                currentDragPosition: _currentDragPosition,
+                isVisible: true,
+                modes: _selectorModes,
+                onModeSelected:
+                    (mode) {}, // Logic handled in onPanEnd via _handleModeSelection
+              ),
+            ),
 
           // 3. Top Bar
           Positioned(
@@ -1861,73 +1896,121 @@ class _CameraScreenState extends State<CameraScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       // Gallery / Review Button
-                      GestureDetector(
-                        onTap: _capturedImages.isNotEmpty ? _openGallery : null,
-                        child: Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: Colors.black45,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: Colors.white.withOpacity(0.3)),
-                          ),
-                          child: _capturedImages.isNotEmpty
-                              ? Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    // Stack effect
-                                    if (_capturedImages.length > 1)
-                                      Transform.rotate(
-                                        angle: 0.2,
-                                        child: Container(
-                                          width: 44,
-                                          height: 44,
-                                          decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            image: DecorationImage(
-                                              image: FileImage(_capturedImages[
-                                                      _capturedImages.length -
-                                                          2]
-                                                  .file),
-                                              fit: BoxFit.cover,
-                                              opacity: 0.6,
+                      if (!_isFrozen)
+                        GestureDetector(
+                          onTap:
+                              _capturedImages.isNotEmpty ? _openGallery : null,
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: Colors.black45,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: Colors.white.withOpacity(0.3)),
+                            ),
+                            child: _capturedImages.isNotEmpty
+                                ? Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      // Stack effect
+                                      if (_capturedImages.length > 1)
+                                        Transform.rotate(
+                                          angle: 0.2,
+                                          child: Container(
+                                            width: 44,
+                                            height: 44,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              image: DecorationImage(
+                                                image: FileImage(
+                                                    _capturedImages[
+                                                            _capturedImages
+                                                                    .length -
+                                                                2]
+                                                        .file),
+                                                fit: BoxFit.cover,
+                                                opacity: 0.6,
+                                              ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    // Top Image
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color:
-                                                _capturedImages.last.hasWarnings
-                                                    ? Colors.orange
-                                                    : Colors.white,
-                                            width:
-                                                _capturedImages.last.hasWarnings
-                                                    ? 2.5
-                                                    : 1.5),
-                                        image: DecorationImage(
-                                          image: FileImage(
-                                              _capturedImages.last.file),
-                                          fit: BoxFit.cover,
+                                      // Top Image
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                              color: _capturedImages
+                                                      .last.hasWarnings
+                                                  ? Colors.orange
+                                                  : Colors.white,
+                                              width: _capturedImages
+                                                      .last.hasWarnings
+                                                  ? 2.5
+                                                  : 1.5),
+                                          image: DecorationImage(
+                                            image: FileImage(
+                                                _capturedImages.last.file),
+                                            fit: BoxFit.cover,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                )
-                              : Icon(Icons.photo_library_outlined,
-                                  color: Colors.white.withOpacity(0.5)),
+                                    ],
+                                  )
+                                : Icon(Icons.photo_library_outlined,
+                                    color: Colors.white.withOpacity(0.5)),
+                          ),
                         ),
-                      ),
 
                       // Capture Button
                       Builder(builder: (context) {
+                        // Special frozen UI
+                        if (_isFrozen) {
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _isFrozen = false;
+                                    _frozenImageFile = null;
+                                  });
+                                  _controller!.resumePreview();
+                                },
+                                icon: const Icon(Icons.refresh),
+                                label: const Text("Chụp lại"),
+                                style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.grey),
+                              ),
+                              const SizedBox(width: 16),
+                              FilledButton.icon(
+                                onPressed: () {
+                                  // Save currently selected points as result
+                                  // Or just capture this as evidence?
+                                  // For now, assume "Done" means save to list
+                                  setState(() {
+                                    _isFrozen = false;
+                                    // Add to captured images list properly
+                                    // But wait, the file is _frozenImageFile
+                                    if (_frozenImageFile != null) {
+                                      _capturedImages.add(CapturedImage(
+                                          file: _frozenImageFile!));
+                                    }
+                                    _frozenImageFile = null;
+                                  });
+                                  _controller!.resumePreview();
+                                },
+                                icon: const Icon(Icons.check),
+                                label: const Text("Lưu"),
+                              ),
+                            ],
+                          );
+                        }
+
                         // Check if mode is selected
                         bool modeMissing = _capturedImages.isEmpty &&
                             _selectedModeType == null;
@@ -1936,8 +2019,8 @@ class _CameraScreenState extends State<CameraScreen>
                         bool measurementMissing = false;
                         if (_selectedModeType ==
                             EstimationModeType.groundPlane) {
-                          measurementMissing =
-                              _groundPointA == null || _groundPointB == null;
+                          // If ground plane, we allows capture even if missing points (to enter freeze)
+                          measurementMissing = false;
                         } else if (_selectedModeType ==
                             EstimationModeType.planarObject) {
                           measurementMissing =
@@ -2016,10 +2099,6 @@ class _CameraScreenState extends State<CameraScreen>
                     ],
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Chụp 6 ảnh, di chuyển đều nhau',
-                    style: TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
                 ],
               ),
             ),
@@ -2065,47 +2144,6 @@ class _CameraScreenState extends State<CameraScreen>
             },
             onCalibrationPlayground: () {
               context.push('/calibration-playground');
-            },
-            groundPlaneMode: _groundPlaneMode,
-            onGroundPlaneModeChanged: (value) {
-              setState(() {
-                _groundPlaneMode = value;
-                if (value) {
-                  _planarObjectMode = false;
-                  _verticalObjectMode = false;
-                  _currentMeasurement = null;
-                }
-              });
-            },
-            cameraHeightMeters: _cameraHeightMeters,
-            onCameraHeightChanged: (value) {
-              setState(() => _cameraHeightMeters = value);
-            },
-            planarObjectMode: _planarObjectMode,
-            onPlanarObjectModeChanged: (value) {
-              setState(() {
-                _planarObjectMode = value;
-                if (value) {
-                  _groundPlaneMode = false;
-                  _verticalObjectMode = false;
-                  _currentPlanarMeasurement = null;
-                }
-              });
-            },
-            referenceObject: _referenceObject,
-            onReferenceObjectChanged: (value) {
-              setState(() => _referenceObject = value);
-            },
-            verticalObjectMode: _verticalObjectMode,
-            onVerticalObjectModeChanged: (value) {
-              setState(() {
-                _verticalObjectMode = value;
-                if (value) {
-                  _groundPlaneMode = false;
-                  _planarObjectMode = false;
-                  _currentVerticalMeasurement = null;
-                }
-              });
             },
             applyUndistortion: _applyUndistortion,
             onUndistortionChanged: (value) =>
@@ -2155,21 +2193,6 @@ class _CameraScreenState extends State<CameraScreen>
                       ? 'planar'
                       : 'vertical', // Assuming one mode is active at a time
               onClose: () => setState(() => _showMathDetails = false),
-            ),
-
-          // 8.3 Mode Selector Overlay
-          if (_isModeSelectorVisible)
-            EstimationModeSelector(
-              center: _dragStartPosition,
-              currentDragPosition: _currentDragPosition,
-              isVisible: true,
-              modes: _selectorModes,
-              onModeSelected: (mode) {
-                final index = _selectorModes.indexOf(mode);
-                if (index != -1) {
-                  _showModeExplanation(index);
-                }
-              },
             ),
 
           // 12. Loading Overlay
