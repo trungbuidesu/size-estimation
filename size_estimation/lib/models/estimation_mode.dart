@@ -9,13 +9,13 @@ enum EstimationModeType {
 class EstimationMode {
   final EstimationModeType type;
   final String label;
-  final String description;
+  final List<String> steps; // Changed from description to steps
   final IconData icon;
 
   const EstimationMode({
     required this.type,
     required this.label,
-    required this.description,
+    required this.steps,
     required this.icon,
   });
 }

@@ -10,7 +10,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  int _aspectRatioIndex = 1; // Default to 4:3 (Index 1) usually
   List<int> _timerPresets = [3, 5, 10];
   bool _isLoading = true;
 
@@ -25,7 +24,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final prefs = await SharedPreferences.getInstance();
       if (mounted) {
         setState(() {
-          _aspectRatioIndex = prefs.getInt('default_aspect_ratio') ?? 1;
           final List<String>? presets = prefs.getStringList('timer_presets');
           if (presets != null && presets.length == 3) {
             _timerPresets = presets.map((e) => int.tryParse(e) ?? 10).toList();
@@ -41,14 +39,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
     }
-  }
-
-  Future<void> _saveAspectRatio(int index) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('default_aspect_ratio', index);
-    setState(() {
-      _aspectRatioIndex = index;
-    });
   }
 
   Future<void> _saveTimerPreset(int slotIndex, int value) async {
@@ -70,23 +60,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Camera',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-                ListTile(
-                  title: const Text('Tỉ lệ khung hình mặc định'),
-                  subtitle: Text(_getRatioLabel(_aspectRatioIndex)),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () => _showRatioSelectionDialog(),
-                ),
                 const Divider(),
                 Padding(
                   padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -109,68 +82,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 }),
               ],
             ),
-    );
-  }
-
-  String _getRatioLabel(int index) {
-    switch (index) {
-      case 0:
-        return '1:1 (Vuông)';
-      case 1:
-        return '4:3 (Tiêu chuẩn)';
-      case 2:
-        return '16:9 (Toàn màn hình)';
-      default:
-        return '4:3 (Tiêu chuẩn)';
-    }
-  }
-
-  void _showRatioSelectionDialog() {
-    CommonAlertDialog.show(
-      context: context,
-      title: 'Chọn tỉ lệ khung hình',
-      icon: Icons.aspect_ratio,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          RadioListTile<int>(
-            title: const Text('1:1 (Vuông)'),
-            value: 0,
-            groupValue: _aspectRatioIndex,
-            activeColor: Theme.of(context).colorScheme.primary,
-            onChanged: (val) {
-              if (val != null) {
-                _saveAspectRatio(val);
-                Navigator.pop(context);
-              }
-            },
-          ),
-          RadioListTile<int>(
-            title: const Text('4:3 (Tiêu chuẩn)'),
-            value: 1,
-            groupValue: _aspectRatioIndex,
-            activeColor: Theme.of(context).colorScheme.primary,
-            onChanged: (val) {
-              if (val != null) {
-                _saveAspectRatio(val);
-                Navigator.pop(context);
-              }
-            },
-          ),
-          RadioListTile<int>(
-            title: const Text('16:9 (Toàn màn hình)'),
-            value: 2,
-            groupValue: _aspectRatioIndex,
-            activeColor: Theme.of(context).colorScheme.primary,
-            onChanged: (val) {
-              if (val != null) {
-                _saveAspectRatio(val);
-                Navigator.pop(context);
-              }
-            },
-          ),
-        ],
-      ),
     );
   }
 

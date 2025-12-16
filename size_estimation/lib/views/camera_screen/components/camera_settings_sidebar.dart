@@ -18,8 +18,6 @@ class CameraSettingsSidebar extends StatelessWidget {
   final int timerDuration; // 0, 3, 10
   final ValueChanged<int> onTimerChanged;
   final List<int> timerPresets;
-  final int aspectRatioIndex; // 0 = Full, 1 = 4:3
-  final ValueChanged<int> onAspectRatioChanged;
 
   // Zoom properties
   final double currentZoom;
@@ -61,8 +59,6 @@ class CameraSettingsSidebar extends StatelessWidget {
     required this.timerDuration,
     required this.onTimerChanged,
     required this.timerPresets,
-    required this.aspectRatioIndex,
-    required this.onAspectRatioChanged,
     required this.currentZoom,
     required this.minZoom,
     required this.maxZoom,
@@ -230,28 +226,6 @@ class CameraSettingsSidebar extends StatelessWidget {
                                       selectedValue: timerDuration,
                                       onChanged: (val) => onTimerChanged(
                                           timerDuration == val ? 0 : val),
-                                    ),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 24),
-
-                                // --- Ratio Setting ---
-                                _buildSettingRow(
-                                  context,
-                                  title: 'RATIO',
-                                  currentValue:
-                                      _getRatioLabel(aspectRatioIndex),
-                                  children: [
-                                    _buildSegmentedControl<int>(
-                                      context,
-                                      items: const [
-                                        MapEntry('1:1', 0),
-                                        MapEntry('4:3', 1),
-                                        MapEntry('16:9', 2),
-                                      ],
-                                      selectedValue: aspectRatioIndex,
-                                      onChanged: onAspectRatioChanged,
                                     ),
                                   ],
                                 ),
@@ -661,18 +635,5 @@ class CameraSettingsSidebar extends StatelessWidget {
         }).toList(),
       ),
     );
-  }
-
-  String _getRatioLabel(int index) {
-    switch (index) {
-      case 0:
-        return '1:1';
-      case 1:
-        return '4:3';
-      case 2:
-        return '16:9';
-      default:
-        return '4:3';
-    }
   }
 }

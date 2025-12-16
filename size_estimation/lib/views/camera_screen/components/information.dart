@@ -211,7 +211,7 @@ class _MethodGuideTabsState extends State<MethodGuideTabs>
           ),
           const SizedBox(height: 8),
           Text(
-            mode.description,
+            mode.steps.join('\n• '),
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const Spacer(),

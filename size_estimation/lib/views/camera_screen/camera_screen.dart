@@ -9,7 +9,6 @@ import 'package:go_router/go_router.dart';
 import 'package:size_estimation/models/captured_image.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
 
-import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
 import 'package:size_estimation/views/camera_screen/components/image_detail_modal.dart';
 import 'package:size_estimation/views/shared_components/index.dart';
@@ -21,6 +20,8 @@ import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
 import 'package:size_estimation/services/dynamic_intrinsics_service.dart';
 import 'package:size_estimation/services/imu_service.dart';
+import 'package:size_estimation/services/sensor_service.dart'
+    show StabilityMetrics;
 import 'package:size_estimation/models/camera_metadata.dart';
 import 'package:size_estimation/views/camera_screen/components/grid_overlay.dart';
 import 'package:size_estimation/services/lens_distortion_service.dart';
@@ -29,10 +30,9 @@ import 'package:size_estimation/services/result_averaging_service.dart';
 import 'package:size_estimation/services/feature_tracking_service.dart'; // Added
 import 'package:size_estimation/services/vanishing_point_service.dart'; // Added
 import 'package:size_estimation/views/camera_screen/components/k_matrix_overlay.dart';
-import 'package:size_estimation/views/camera_screen/components/draggable_info_overlay.dart';
 
 import 'package:size_estimation/views/camera_screen/components/math_details_overlay.dart'; // Added
-import 'package:size_estimation/views/camera_screen/components/estimation_mode_selector.dart'; // Changed from mode_selector_overlay.dart
+
 import 'package:size_estimation/views/camera_screen/components/ground_plane_selector.dart';
 import 'package:size_estimation/views/camera_screen/components/planar_object_selector.dart';
 import 'package:size_estimation/views/camera_screen/components/vertical_object_selector.dart';
@@ -40,7 +40,6 @@ import 'package:size_estimation/views/camera_screen/components/vertical_object_s
 import 'package:size_estimation/services/ground_plane_service.dart';
 import 'package:size_estimation/services/planar_object_service.dart';
 import 'package:size_estimation/services/vertical_object_service.dart';
-import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
 
@@ -71,33 +70,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showMathDetails = false; // Added
 
   // Mode Selector State
-  bool _isModeSelectorVisible = false;
-  bool _ignoreNextPanEnd = false;
-  Offset _dragStartPosition = Offset.zero;
-  Offset _currentDragPosition = Offset.zero;
-  final List<EstimationMode> _selectorModes = [
-    const EstimationMode(
-      type: EstimationModeType.groundPlane,
-      icon: Icons.landscape,
-      label: AppStrings.modeGroundPlane,
-      description:
-          'Đo vật nằm trên mặt phẳng (sàn/bàn). Sử dụng Ground-Plane Homography: tính toán ma trận chuyển đổi H giữa ảnh và mặt phẳng đất dựa trên chiều cao camera h và orientation từ IMU. Chọn 2 điểm A,B trên ảnh → chuyển sang tọa độ ground (X,Y) → tính khoảng cách Euclidean. Hỗ trợ Edge Snapping (Canny + Hough) để snap điểm vào cạnh vật chính xác hơn.',
-    ),
-    const EstimationMode(
-      type: EstimationModeType.planarObject,
-      icon: Icons.crop_square,
-      label: AppStrings.modePlanarObject,
-      description:
-          'Đo vật phẳng (A4, màn hình, mặt hộp) không nhất thiết nằm trên đất. Chọn 4 góc → tính Homography để rectify (warp) thành hình chữ nhật chuẩn (fronto-parallel view). Sử dụng Pinhole Model với khoảng cách Z (từ focus hoặc user nhập) để tính scale pixel→cm. Hỗ trợ Auto-detect (Canny + Hough + findContours + RANSAC) và SubPixel Corner Refinement.',
-    ),
-    const EstimationMode(
-      type: EstimationModeType.singleView,
-      icon: Icons.height,
-      label: AppStrings.modeVerticalObject,
-      description:
-          'Đo chiều cao vật đứng (tường, cửa, tòa nhà) bằng Single-View Metrology. Phát hiện Vanishing Points từ các đường thẳng trong ảnh (Canny + Hough/LSD + RANSAC clustering). Sử dụng quan hệ projective (cross-ratio) giữa điểm chân F, đỉnh T, vanishing point và horizon để suy ra chiều cao thật dựa trên chiều cao camera h đã biết.',
-    ),
-  ];
+  final List<EstimationMode> _selectorModes = kEstimationModes;
 
   EstimationModeType? _selectedModeType; // Track selected mode
 
@@ -162,7 +135,8 @@ class _CameraScreenState extends State<CameraScreen>
 
   // Settings State
   int _timerDuration = 0;
-  int _aspectRatioIndex = 0;
+  // Aspect ratio locked to 16:9
+  static const int _aspectRatioIndex = 2; // 16:9
   // Countdown State
   int _countdownSeconds = 0;
   bool _isCountingDown = false;
@@ -172,7 +146,6 @@ class _CameraScreenState extends State<CameraScreen>
   late Animation<double> _settingsAnimation;
   final GlobalKey _settingsButtonKey = GlobalKey();
 
-  final SensorService _sensorService = SensorService(); // Added SensorService
   final CalibrationService _calibrationService = CalibrationService();
   final DynamicIntrinsicsService _dynamicIntrinsicsService =
       DynamicIntrinsicsService();
@@ -187,7 +160,6 @@ class _CameraScreenState extends State<CameraScreen>
     _loadSettings();
     _loadActiveProfile();
     _initializeCamera();
-    _sensorService.startListening(); // Added Sensor Listen
 
     // Listen to IMU orientation updates
     _imuService.startListening();
@@ -214,7 +186,6 @@ class _CameraScreenState extends State<CameraScreen>
       final prefs = await SharedPreferences.getInstance();
       if (mounted) {
         setState(() {
-          _aspectRatioIndex = prefs.getInt('default_aspect_ratio') ?? 0;
           final List<String>? presets = prefs.getStringList('timer_presets');
           if (presets != null && presets.length == 3) {
             _timerPresets = presets.map((e) => int.tryParse(e) ?? 10).toList();
@@ -239,14 +210,8 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  Future<void> _saveAspectRatio(int index) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('default_aspect_ratio', index);
-  }
-
   @override
   void dispose() {
-    _sensorService.dispose(); // Added Sensor Dispose
     _imuService.dispose(); // Dispose IMU service
     _dynamicIntrinsicsService.dispose(); // Dispose dynamic intrinsics
 
@@ -863,6 +828,137 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  IconData _getModeIcon() {
+    if (_selectedModeType == null) return Icons.category_outlined;
+
+    switch (_selectedModeType!) {
+      case EstimationModeType.groundPlane:
+        return Icons.landscape;
+      case EstimationModeType.planarObject:
+        return Icons.crop_square;
+      case EstimationModeType.singleView:
+        return Icons.height;
+    }
+  }
+
+  void _showModeConfirmationDialog(EstimationMode mode) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(mode.icon, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                mode.label,
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Animated visualization
+              Container(
+                height: 150,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Theme.of(context).primaryColor.withOpacity(0.2),
+                  ),
+                ),
+                child: ModeAnimationWidget(modeType: mode.type),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Các bước thực hiện:',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Step-by-step instructions
+              ...mode.steps.asMap().entries.map((entry) {
+                final index = entry.key;
+                final step = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${index + 1}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          step,
+                          style: const TextStyle(fontSize: 14, height: 1.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              // Reset state - không chọn mode nào
+              setState(() {
+                _selectedModeType = null;
+                _groundPlaneMode = false;
+                _planarObjectMode = false;
+                _verticalObjectMode = false;
+                _currentMeasurement = null;
+                _currentPlanarMeasurement = null;
+                _currentVerticalMeasurement = null;
+                _groundPointA = null;
+                _groundPointB = null;
+              });
+            },
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _switchModeByType(mode.type);
+            },
+            child: const Text('Đã hiểu'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<double?> _showCameraHeightDialog() async {
     double tempHeight = _cameraHeightMeters;
     return showDialog<double>(
@@ -1325,28 +1421,56 @@ class _CameraScreenState extends State<CameraScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.max,
                   children: [
-                    if (_researcherConfig.showImuInfo)
-                      StreamBuilder<StabilityMetrics>(
-                          stream: _sensorService.stabilityStream,
-                          initialData: StabilityMetrics(
-                              stabilityScore: 1.0,
-                              isLevel: true,
-                              rollDegrees: 0,
-                              isStable: true),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData)
-                              return const SizedBox(height: 6, width: 100);
-                            return SizedBox(
-                                width: 120,
-                                child: StabilityIndicator(
-                                    metrics: snapshot.data!));
-                          }),
+                    if (_researcherConfig.showImuInfo &&
+                        _currentOrientation != null)
+                      SizedBox(
+                        width: 120,
+                        child: StabilityIndicator(
+                          metrics: StabilityMetrics(
+                            stabilityScore: 1.0, // IMU doesn't track movement
+                            isLevel: _imuService.isDeviceLevel(),
+                            rollDegrees: _currentOrientation!.rollDegrees,
+                            isStable: true,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Mode Selector Button
+                  IconButton(
+                    icon: Icon(
+                      _getModeIcon(),
+                      color: _selectedModeType == null
+                          ? Colors.white70
+                          : Colors.orange,
+                    ),
+                    onPressed: _showModeSelector,
+                    tooltip: "Chọn chế độ đo",
+                  ),
+                  // Camera Height Button (Ground Plane Mode)
+                  if (_groundPlaneMode)
+                    IconButton(
+                      icon:
+                          const Icon(Icons.straighten, color: Colors.lightBlue),
+                      onPressed: () async {
+                        final height = await _showCameraHeightDialog();
+                        if (height != null) {
+                          setState(() {
+                            _cameraHeightMeters = height;
+                            // Reset measurements when height changes
+                            _currentMeasurement = null;
+                            _groundPointA = null;
+                            _groundPointB = null;
+                          });
+                        }
+                      },
+                      tooltip:
+                          "Đặt chiều cao camera: ${_cameraHeightMeters.toStringAsFixed(1)}m",
+                    ),
                   if (_groundPlaneMode &&
                       _currentMeasurement != null &&
                       !_isGroundPlaneResultVisible)
@@ -1435,20 +1559,7 @@ class _CameraScreenState extends State<CameraScreen>
                               width: MediaQuery.of(context).size.width,
                               height: MediaQuery.of(context).size.width *
                                   _controller!.value.aspectRatio,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  border:
-                                      (_showIMU && _currentOrientation != null)
-                                          ? Border.all(
-                                              color: _imuService.isDeviceLevel()
-                                                  ? Colors.green
-                                                  : Colors.orange,
-                                              width: 4,
-                                            )
-                                          : null,
-                                ),
-                                child: CameraPreview(_controller!),
-                              ),
+                              child: CameraPreview(_controller!),
                             ),
                           ),
                         ),
@@ -1457,12 +1568,11 @@ class _CameraScreenState extends State<CameraScreen>
                       const Center(
                           child:
                               CircularProgressIndicator(color: Colors.white)),
-                    if (_isInitialized)
+                    if (_isInitialized && _currentOrientation != null)
                       Positioned.fill(
-                        child: OverlapGuide(
-                          images: List.of(_capturedImages),
-                          requiredImages: _requiredImages,
-                          aspectRatio: aspectRatio,
+                        child: DeviceLevelIndicator(
+                          isLevel: _imuService.isDeviceLevel(),
+                          rollDegrees: _currentOrientation!.rollDegrees,
                         ),
                       ),
                     if (_isInitialized)
@@ -1596,68 +1706,6 @@ class _CameraScreenState extends State<CameraScreen>
                     },
                   ),
                 ),
-              ),
-            ),
-
-          // Mode Selector Gesture Zone (Left Edge)
-          Positioned(
-            left: 0,
-            top: 100, // Avoid Top Bar
-            bottom: 150, // Avoid Bottom Bar
-            width: 40, // Trigger Zone Width
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onPanStart: (details) {
-                setState(() {
-                  _ignoreNextPanEnd = false;
-                  _isModeSelectorVisible = true;
-                  _dragStartPosition =
-                      details.localPosition + const Offset(0, 100);
-                  _currentDragPosition =
-                      details.localPosition + const Offset(0, 100);
-                });
-                HapticFeedback.lightImpact();
-              },
-              onPanUpdate: (details) {
-                setState(() {
-                  _currentDragPosition =
-                      details.localPosition + const Offset(0, 100);
-                });
-              },
-              onPanEnd: (details) {
-                if (_ignoreNextPanEnd) {
-                  setState(() {
-                    _ignoreNextPanEnd = false;
-                    _isModeSelectorVisible = false;
-                  });
-                  return;
-                }
-                _handleModeSelection();
-                setState(() {
-                  _isModeSelectorVisible = false;
-                });
-              },
-              child: Container(color: Colors.transparent),
-            ),
-          ),
-
-          // Mode Selector Overlay display
-          if (_isModeSelectorVisible)
-            Positioned.fill(
-              child: EstimationModeSelector(
-                center: _dragStartPosition,
-                currentDragPosition: _currentDragPosition,
-                isVisible: true,
-                modes: _selectorModes,
-                onDwellStarted: () => setState(() => _ignoreNextPanEnd = true),
-                onModeSelected: (mode) {
-                  ScaffoldMessenger.of(context).clearSnackBars();
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Đã chọn: ${mode.label}'),
-                      duration: const Duration(milliseconds: 500)));
-                  _switchModeByType(mode.type);
-                  setState(() => _isModeSelectorVisible = false);
-                },
               ),
             ),
 
@@ -1938,104 +1986,142 @@ class _CameraScreenState extends State<CameraScreen>
             ),
           ),
 
+          // IMU Overlay - Fixed at top-left
           if (_showIMU && _currentOrientation != null)
-            DraggableOverlay(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Euler Angles
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('EULER (deg)',
-                            style: TextStyle(
-                                color: Colors.orange,
-                                fontSize: 9,
-                                letterSpacing: 0.5,
-                                fontWeight: FontWeight.bold)),
-                        Text(
-                            'R: ${_currentOrientation!.rollDegrees.toStringAsFixed(1)}°',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontFamily: 'Courier',
-                                fontWeight: FontWeight.bold)),
-                        Text(
-                            'P: ${_currentOrientation!.pitchDegrees.toStringAsFixed(1)}°',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontFamily: 'Courier',
-                                fontWeight: FontWeight.bold)),
-                        Text(
-                            'Y: ${_currentOrientation!.yawDegrees.toStringAsFixed(1)}°',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontFamily: 'Courier',
-                                fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-                    // Rotation Matrix
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('ROTATION MATRIX R',
-                            style: TextStyle(
-                                color: Colors.cyan,
-                                fontSize: 9,
-                                letterSpacing: 0.5,
-                                fontWeight: FontWeight.bold)),
-                        ..._currentOrientation!
-                            .getRotationMatrixAsList()
-                            .map((row) => Text(
-                                  '[${row[0].toStringAsFixed(2)}, ${row[1].toStringAsFixed(2)}, ${row[2].toStringAsFixed(2)}]',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontFamily: 'Courier',
-                                      fontWeight: FontWeight.bold),
-                                )),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-                    // Gravity
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('GRAVITY',
-                            style: TextStyle(
-                                color: Colors.purpleAccent,
-                                fontSize: 9,
-                                letterSpacing: 0.5,
-                                fontWeight: FontWeight.bold)),
-                        Text(
-                            'x: ${_currentOrientation!.gravity.x.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontFamily: 'Courier',
-                                fontWeight: FontWeight.bold)),
-                        Text(
-                            'y: ${_currentOrientation!.gravity.y.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontFamily: 'Courier',
-                                fontWeight: FontWeight.bold)),
-                        Text(
-                            'z: ${_currentOrientation!.gravity.z.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontFamily: 'Courier',
-                                fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ],
+            Positioned(
+              top: 80, // Below top bar
+              left: 8,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.all(8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Euler Angles
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('EULER (deg)',
+                              style: TextStyle(
+                                  color: Colors.orange,
+                                  fontSize: 9,
+                                  letterSpacing: 0.5,
+                                  fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          // Swap roll and pitch when device is rotated ~90°
+                          Builder(builder: (context) {
+                            final absRoll =
+                                _currentOrientation!.rollDegrees.abs();
+                            final isRotated = absRoll > 75 && absRoll < 105;
+
+                            final rollValue = _currentOrientation!.rollDegrees;
+                            final pitchValue =
+                                _currentOrientation!.pitchDegrees;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // First line - R or P depending on rotation
+                                Text(
+                                    isRotated
+                                        ? 'P: ${pitchValue.toStringAsFixed(1)}°'
+                                        : 'R: ${rollValue.toStringAsFixed(1)}°',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontFamily: 'Courier',
+                                        fontWeight: FontWeight.bold)),
+                                // Second line - P or R depending on rotation
+                                Text(
+                                    isRotated
+                                        ? 'R: ${rollValue.toStringAsFixed(1)}°'
+                                        : 'P: ${pitchValue.toStringAsFixed(1)}°',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontFamily: 'Courier',
+                                        fontWeight: FontWeight.bold)),
+                                Text(
+                                    'Y: ${_currentOrientation!.yawDegrees.toStringAsFixed(1)}°',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontFamily: 'Courier',
+                                        fontWeight: FontWeight.bold)),
+                              ],
+                            );
+                          }),
+                        ],
+                      ),
+                      const SizedBox(width: 16),
+                      // Rotation Matrix
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('ROTATION MATRIX R',
+                              style: TextStyle(
+                                  color: Colors.cyan,
+                                  fontSize: 9,
+                                  letterSpacing: 0.5,
+                                  fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          ..._currentOrientation!
+                              .getRotationMatrixAsList()
+                              .map((row) => Text(
+                                    '[${row[0].toStringAsFixed(2)}, ${row[1].toStringAsFixed(2)}, ${row[2].toStringAsFixed(2)}]',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontFamily: 'Courier',
+                                        fontWeight: FontWeight.bold),
+                                  )),
+                        ],
+                      ),
+                      const SizedBox(width: 16),
+                      // Gravity
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('GRAVITY',
+                              style: TextStyle(
+                                  color: Colors.purpleAccent,
+                                  fontSize: 9,
+                                  letterSpacing: 0.5,
+                                  fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Text(
+                              'x: ${_currentOrientation!.gravity.x.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontFamily: 'Courier',
+                                  fontWeight: FontWeight.bold)),
+                          Text(
+                              'y: ${_currentOrientation!.gravity.y.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontFamily: 'Courier',
+                                  fontWeight: FontWeight.bold)),
+                          Text(
+                              'z: ${_currentOrientation!.gravity.z.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontFamily: 'Courier',
+                                  fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2059,25 +2145,6 @@ class _CameraScreenState extends State<CameraScreen>
             timerDuration: _timerDuration,
             onTimerChanged: (val) => setState(() => _timerDuration = val),
             timerPresets: _timerPresets,
-            aspectRatioIndex: _aspectRatioIndex,
-            onAspectRatioChanged: (val) {
-              _saveAspectRatio(val);
-              setState(() {
-                _aspectRatioIndex = val;
-                // Reset mode
-                _selectedModeType = null;
-                _groundPlaneMode = false;
-                _planarObjectMode = false;
-                _verticalObjectMode = false;
-                _currentMeasurement = null;
-                _currentPlanarMeasurement = null;
-                _currentVerticalMeasurement = null;
-                _groundPointA = null;
-                _groundPointB = null;
-                _isFrozen = false;
-                _frozenImageFile = null;
-              });
-            },
             currentZoom: _currentZoom,
             minZoom: _minZoom,
             maxZoom: _maxZoom,
@@ -2201,33 +2268,78 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  void _handleModeSelection() {
-    final dx = _currentDragPosition.dx - _dragStartPosition.dx;
-    final dy = _currentDragPosition.dy - _dragStartPosition.dy;
-    final distance = sqrt(dx * dx + dy * dy);
-
-    if (distance > 60) {
-      double angle = atan2(dy, dx);
-      // Fan Logic: Right Facing (Center 0)
-      // Span 180 deg -> -90 to +90 deg
-      const double totalSweep = 180 * (pi / 180);
-      const double startAngle = -totalSweep / 2;
-      final double segmentAngle = totalSweep / _selectorModes.length;
-
-      if (angle >= startAngle && angle <= startAngle + totalSweep) {
-        double relative = angle - startAngle;
-        int index = (relative / segmentAngle).floor();
-        if (index >= 0 && index < _selectorModes.length) {
-          final selectedMode = _selectorModes[index];
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Đã chọn: ${selectedMode.label}'),
-              duration: const Duration(milliseconds: 500)));
-          // Actually switch to the selected mode
-          _switchModeByType(selectedMode.type);
-        }
-      }
-    }
+  void _showModeSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  'Chọn chế độ đo',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ..._selectorModes.map((mode) => ListTile(
+                    leading: Icon(
+                      mode.icon,
+                      color: _selectedModeType == mode.type
+                          ? Theme.of(context).primaryColor
+                          : null,
+                    ),
+                    title: Text(
+                      mode.label,
+                      style: TextStyle(
+                        fontWeight: _selectedModeType == mode.type
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        color: _selectedModeType == mode.type
+                            ? Theme.of(context).primaryColor
+                            : null,
+                      ),
+                    ),
+                    subtitle: Text(
+                      mode.steps.isNotEmpty ? mode.steps.first : '',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: _selectedModeType == mode.type
+                        ? Icon(Icons.check_circle,
+                            color: Theme.of(context).primaryColor)
+                        : null,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showModeConfirmationDialog(mode);
+                    },
+                  )),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showInformationScreen() {
