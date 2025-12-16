@@ -10,37 +10,23 @@ import 'package:size_estimation/models/captured_image.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
 
 import 'package:size_estimation/views/camera_screen/components/index.dart';
-import 'package:size_estimation/views/camera_screen/components/image_detail_modal.dart';
 import 'package:size_estimation/views/shared_components/index.dart';
 
 import 'package:size_estimation/constants/index.dart';
-import 'package:size_estimation/views/camera_screen/components/information.dart';
 import 'package:size_estimation/models/researcher_config.dart';
 import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
 import 'package:size_estimation/services/dynamic_intrinsics_service.dart';
 import 'package:size_estimation/services/imu_service.dart';
-import 'package:size_estimation/services/sensor_service.dart'
-    show StabilityMetrics;
 import 'package:size_estimation/models/camera_metadata.dart';
-import 'package:size_estimation/views/camera_screen/components/grid_overlay.dart';
 import 'package:size_estimation/services/lens_distortion_service.dart';
 import 'package:size_estimation/services/edge_snapping_service.dart';
 import 'package:size_estimation/services/result_averaging_service.dart';
 import 'package:size_estimation/services/feature_tracking_service.dart'; // Added
 import 'package:size_estimation/services/vanishing_point_service.dart'; // Added
-import 'package:size_estimation/views/camera_screen/components/k_matrix_overlay.dart';
-
-import 'package:size_estimation/views/camera_screen/components/math_details_overlay.dart'; // Added
-
-import 'package:size_estimation/views/camera_screen/components/ground_plane_selector.dart';
-import 'package:size_estimation/views/camera_screen/components/planar_object_selector.dart';
-import 'package:size_estimation/views/camera_screen/components/vertical_object_selector.dart';
-
 import 'package:size_estimation/services/ground_plane_service.dart';
 import 'package:size_estimation/services/planar_object_service.dart';
 import 'package:size_estimation/services/vertical_object_service.dart';
-import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
 
 class CameraScreen extends StatefulWidget {
@@ -67,7 +53,6 @@ class _CameraScreenState extends State<CameraScreen>
   bool _showKMatrix = false; // K Matrix overlay state
   bool _showIMU = false; // Restored
   bool _isLocked = false;
-  bool _showMathDetails = false; // Added
 
   // Mode Selector State
   final List<EstimationMode> _selectorModes = kEstimationModes;
@@ -1420,21 +1405,7 @@ class _CameraScreenState extends State<CameraScreen>
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.max,
-                  children: [
-                    if (_researcherConfig.showImuInfo &&
-                        _currentOrientation != null)
-                      SizedBox(
-                        width: 120,
-                        child: StabilityIndicator(
-                          metrics: StabilityMetrics(
-                            stabilityScore: 1.0, // IMU doesn't track movement
-                            isLevel: _imuService.isDeviceLevel(),
-                            rollDegrees: _currentOrientation!.rollDegrees,
-                            isStable: true,
-                          ),
-                        ),
-                      ),
-                  ],
+                  children: [],
                 ),
               ),
               Row(
@@ -2157,7 +2128,6 @@ class _CameraScreenState extends State<CameraScreen>
                   // Reset all advanced configs
                   _showKMatrix = false;
                   _showIMU = false;
-                  _showMathDetails = false;
                   _applyUndistortion = false;
                   _edgeSnapping = false;
                   _multiFrameMode = false;
@@ -2179,9 +2149,6 @@ class _CameraScreenState extends State<CameraScreen>
             onShowIMU: () {
               setState(() => _showIMU = !_showIMU);
             },
-            onCalibrationPlayground: () {
-              context.push('/calibration-playground');
-            },
             applyUndistortion: _applyUndistortion,
             onUndistortionChanged: (value) =>
                 setState(() => _applyUndistortion = value),
@@ -2191,9 +2158,6 @@ class _CameraScreenState extends State<CameraScreen>
             multiFrameMode: _multiFrameMode,
             onMultiFrameModeChanged: (value) =>
                 setState(() => _multiFrameMode = value),
-            onShowMathDetails: () {
-              setState(() => _showMathDetails = !_showMathDetails);
-            },
           ),
 
           // 7. K Matrix Overlay (Researcher Mode)
@@ -2207,17 +2171,6 @@ class _CameraScreenState extends State<CameraScreen>
                 kOut: _currentKOut, // Dynamic K_out
                 onClose: () => setState(() => _showKMatrix = false),
               ),
-            ),
-
-          // 8.1 Math Details Overlay (Researcher Mode)
-          if (_showMathDetails)
-            MathDetailsOverlay(
-              mode: _groundPlaneMode
-                  ? 'ground'
-                  : _planarObjectMode
-                      ? 'planar'
-                      : 'vertical', // Assuming one mode is active at a time
-              onClose: () => setState(() => _showMathDetails = false),
             ),
 
           // 12. Loading Overlay

@@ -6,17 +6,16 @@ import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
 import 'package:size_estimation/views/shared_components/index.dart';
 import 'package:size_estimation/constants/index.dart';
+import 'multi_capture_camera_screen.dart';
 
-class CalibrationPlaygroundScreen extends StatefulWidget {
-  const CalibrationPlaygroundScreen({super.key});
+class CalibrationScreen extends StatefulWidget {
+  const CalibrationScreen({super.key});
 
   @override
-  State<CalibrationPlaygroundScreen> createState() =>
-      _CalibrationPlaygroundScreenState();
+  State<CalibrationScreen> createState() => _CalibrationScreenState();
 }
 
-class _CalibrationPlaygroundScreenState
-    extends State<CalibrationPlaygroundScreen> {
+class _CalibrationScreenState extends State<CalibrationScreen> {
   final CalibrationService _calibrationService = CalibrationService();
   final ImagePicker _picker = ImagePicker();
 
@@ -54,12 +53,18 @@ class _CalibrationPlaygroundScreenState
     }
   }
 
-  Future<void> _captureImage() async {
+  Future<void> _captureImages() async {
     try {
-      final XFile? image = await _picker.pickImage(source: ImageSource.camera);
-      if (image != null) {
+      final List<File>? selectedImages = await Navigator.push<List<File>>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MultiCaptureCameraScreen(),
+        ),
+      );
+
+      if (selectedImages != null && selectedImages.isNotEmpty) {
         setState(() {
-          _chessboardImages.add(File(image.path));
+          _chessboardImages.addAll(selectedImages);
           _errorMessage = null;
         });
       }
@@ -446,7 +451,7 @@ class _CalibrationPlaygroundScreenState
                   children: [
                     IconButton(
                       icon: const Icon(Icons.camera_alt),
-                      onPressed: _captureImage,
+                      onPressed: _captureImages,
                       tooltip: AppStrings.captureTooltip,
                     ),
                     IconButton(

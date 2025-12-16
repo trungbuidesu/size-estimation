@@ -36,8 +36,6 @@ class CameraSettingsSidebar extends StatelessWidget {
   // Calibration actions
   final VoidCallback? onShowKMatrix;
   final VoidCallback? onShowIMU;
-  final VoidCallback? onCalibrationPlayground;
-  final VoidCallback? onShowMathDetails;
 
   // Advanced Processing
   final bool? applyUndistortion;
@@ -69,14 +67,12 @@ class CameraSettingsSidebar extends StatelessWidget {
     this.onConfigChanged,
     this.onShowKMatrix,
     this.onShowIMU,
-    this.onCalibrationPlayground,
     this.applyUndistortion,
     this.onUndistortionChanged,
     this.edgeSnapping, // Keep one
     this.onEdgeSnappingChanged, // Keep one
     this.multiFrameMode,
     this.onMultiFrameModeChanged,
-    this.onShowMathDetails,
   });
 
   @override
@@ -289,20 +285,6 @@ class CameraSettingsSidebar extends StatelessWidget {
                                             "Show IMU Orientation",
                                             Icons.explore,
                                             onShowIMU,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          _buildActionButton(
-                                            context,
-                                            "Calibration Playground",
-                                            Icons.tune,
-                                            onCalibrationPlayground,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          _buildActionButton(
-                                            context,
-                                            "Math Details",
-                                            Icons.functions,
-                                            onShowMathDetails,
                                           ),
                                           const SizedBox(height: 16),
                                           Divider(

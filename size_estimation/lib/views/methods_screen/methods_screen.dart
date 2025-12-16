@@ -9,7 +9,7 @@ import 'package:size_estimation/views/methods_screen/components/index.dart';
 import 'package:size_estimation/views/shared_components/index.dart';
 import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
-import 'package:size_estimation/views/calibration_playground/profile_selection_dialog.dart';
+import 'package:size_estimation/views/calibration_screen/profile_selection_dialog.dart';
 
 class MethodsScreen extends StatefulWidget {
   const MethodsScreen({super.key});
