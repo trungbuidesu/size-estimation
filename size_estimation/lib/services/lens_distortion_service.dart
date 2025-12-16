@@ -1,3 +1,4 @@
+// ignore_for_file: non_constant_identifier_names
 import 'dart:math';
 import 'package:vector_math/vector_math_64.dart' as vm;
 import 'package:size_estimation/models/camera_metadata.dart'; // Uses IntrinsicMatrix alias

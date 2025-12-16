@@ -5,10 +5,10 @@ class MathDetailsOverlay extends StatelessWidget {
   final VoidCallback onClose;
 
   const MathDetailsOverlay({
-    Key? key,
+    super.key,
     required this.mode,
     required this.onClose,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

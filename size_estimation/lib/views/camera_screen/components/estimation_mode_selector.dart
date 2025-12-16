@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
 import 'package:size_estimation/views/camera_screen/components/mode_explanation_dialog.dart';

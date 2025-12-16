@@ -1,3 +1,4 @@
+// ignore_for_file: non_constant_identifier_names
 import 'dart:math' as math;
 import 'package:vector_math/vector_math_64.dart' as vm;
 import 'package:size_estimation/models/camera_metadata.dart';
@@ -52,10 +53,6 @@ class GroundPlaneService {
     required int imageWidth,
     required int imageHeight,
   }) async {
-    print('--- Start Measurement ---');
-    print(
-        'IMU Orientation: Roll=${orientation.rollDegrees.toStringAsFixed(2)}°, Pitch=${orientation.pitchDegrees.toStringAsFixed(2)}°, Yaw=${orientation.yawDegrees.toStringAsFixed(2)}°');
-
     // Build homography from image to ground plane
     final H_inv = _computeImageToGroundHomography(
       kOut: kOut,
@@ -64,14 +61,11 @@ class GroundPlaneService {
     );
 
     // Map image points to ground coordinates
-    print('Mapping Point A:');
     final groundA = _applyHomography(H_inv, imagePointA);
-    print('Mapping Point B:');
     final groundB = _applyHomography(H_inv, imagePointB);
 
     // Calculate distance
     final distance = (groundA - groundB).length;
-    print('Calculated Distance: $distance meters');
 
     // Estimate error
     final error = _estimateError(
@@ -99,24 +93,12 @@ class GroundPlaneService {
   ///
   /// Homography: H = K [r1 r2 t]
   /// where r1, r2 are first two columns of R
-  /// and t = [0, 0, h]^T in camera coordinates
-  /// Compute homography from image to ground plane
-  /// H^-1 maps image coordinates (u, v) to ground coordinates (X, Y)
-  ///
-  /// Ground plane: Z = 0, normal n = (0, 0, 1)
-  /// Camera at height h, with rotation R
-  ///
-  /// Homography: H = K [r1 r2 t]
-  /// where r1, r2 are first two columns of R
   /// and t = [0, 0, h]^T
   vm.Matrix3 _computeImageToGroundHomography({
     required IntrinsicMatrix kOut,
     required vm.Matrix3 rotation,
     required double cameraHeight,
   }) {
-    print('--- Ground Plane Calculation Debug ---');
-    print('Camera Height (h): $cameraHeight m');
-
     // Build K matrix
     // Note: Matrix3 constructor uses column-major order
     // K = | fx  s  cx |
@@ -134,7 +116,6 @@ class GroundPlaneService {
       kOut.cy, // col2_row1
       1, // col2_row2
     );
-    print('K_out:\n$K');
 
     // Extract r1 and r2
     // Note: The incoming 'rotation' matrix is effectively R^T due to
@@ -144,15 +125,10 @@ class GroundPlaneService {
     final r1 = vm.Vector3(rotation[0], rotation[3], rotation[6]);
     final r2 = vm.Vector3(rotation[1], rotation[4], rotation[7]);
 
-    print('Rotation Matrix (IMU Raw):\n$rotation');
-    print('Extracted r1 (Col 0 of R): $r1');
-    print('Extracted r2 (Col 1 of R): $r2');
-
     // Translation vector t
     // User requirement: t = (0, 0, h)^T
     // Note: This assumes h is in meters.
     final t = vm.Vector3(0, 0, cameraHeight);
-    print('Translation Vector t: $t');
 
     // Build homography H = K [r1 r2 t]
     // Matrix3 uses column-major order, so we arrange [r1, r2, t] as columns:
@@ -166,16 +142,11 @@ class GroundPlaneService {
       t.x, t.y, t.z, // Column 2 (t)
     );
 
-    print('Homography Matrix (before K):\n$H');
-
     final H_full = K * H;
-    print('Full Homography Matrix H (P_img = H * P_g):\n$H_full');
 
     // Return inverse for image -> ground mapping
     final H_inv = vm.Matrix3.copy(H_full);
     H_inv.invert();
-
-    print('Inverse Homography H^-1 (P_g = H^-1 * P_img):\n$H_inv');
 
     return H_inv;
   }
@@ -191,19 +162,13 @@ class GroundPlaneService {
     // Normalize by w
     final w = p_prime.z;
 
-    // Log the point transformation
-    print(
-        'Mapping point (${imagePoint.x}, ${imagePoint.y}) -> Ground Homogeneous: $p_prime');
-
     if (w.abs() < GroundPlaneConfig.zeroEpsilon) {
-      print('Point at infinity (w ~= 0)');
       // Point at infinity, return far point
       return vm.Vector2(GroundPlaneConfig.infinityPointValue,
           GroundPlaneConfig.infinityPointValue);
     }
 
     final groundPoint = vm.Vector2(p_prime.x / w, p_prime.y / w);
-    print('Ground Coordinate: (${groundPoint.x}, ${groundPoint.y})');
 
     return groundPoint;
   }
