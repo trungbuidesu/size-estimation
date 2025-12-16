@@ -36,7 +36,7 @@ import 'package:size_estimation/views/camera_screen/components/estimation_mode_s
 import 'package:size_estimation/views/camera_screen/components/ground_plane_selector.dart';
 import 'package:size_estimation/views/camera_screen/components/planar_object_selector.dart';
 import 'package:size_estimation/views/camera_screen/components/vertical_object_selector.dart';
-import 'package:size_estimation/views/camera_screen/components/mode_explanation_dialog.dart';
+
 import 'package:size_estimation/services/ground_plane_service.dart';
 import 'package:size_estimation/services/planar_object_service.dart';
 import 'package:size_estimation/services/vertical_object_service.dart';
@@ -102,11 +102,7 @@ class _CameraScreenState extends State<CameraScreen>
   EstimationModeType? _selectedModeType; // Track selected mode
 
   // Hover detection for mode explanation
-  Timer? _modeHoverTimer;
-  int? _hoveredModeIndex;
-  bool _showingModeExplanation = false;
 
-  StreamSubscription? _imuSubscription;
   CalibrationProfile? _activeProfile; // Active calibration profile
   CameraMetadata? _currentMetadata;
 
@@ -149,9 +145,6 @@ class _CameraScreenState extends State<CameraScreen>
   double _maxZoom = 1.0;
 
   // Warning State
-  Timer? _warningTimer;
-  bool _hasShownAutoWarning = false;
-  DateTime? _lastCaptureTime;
 
   // Frozen State for Ground Plane Mode
   bool _isFrozen = false;
@@ -175,9 +168,6 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isCountingDown = false;
   List<int> _timerPresets = [3, 5, 10]; // Presets
 
-  StabilityMetrics? _latestStabilityMetrics; // Real-time metrics
-  StreamSubscription<StabilityMetrics>? _stabilitySub;
-
   late AnimationController _settingsAnimationController;
   late Animation<double> _settingsAnimation;
   final GlobalKey _settingsButtonKey = GlobalKey();
@@ -198,15 +188,6 @@ class _CameraScreenState extends State<CameraScreen>
     _loadActiveProfile();
     _initializeCamera();
     _sensorService.startListening(); // Added Sensor Listen
-
-    _stabilitySub = _sensorService.stabilityStream.listen((metrics) {
-      if (mounted) {
-        // Only update if needed to avoid excessive rebuilds,
-        // but here we just store it. We don't setState() because
-        // StabilityIndicator listens to stream too.
-        _latestStabilityMetrics = metrics;
-      }
-    });
 
     // Listen to IMU orientation updates
     _imuService.startListening();
@@ -268,7 +249,7 @@ class _CameraScreenState extends State<CameraScreen>
     _sensorService.dispose(); // Added Sensor Dispose
     _imuService.dispose(); // Dispose IMU service
     _dynamicIntrinsicsService.dispose(); // Dispose dynamic intrinsics
-    _warningTimer?.cancel();
+
     _controller?.dispose();
     _settingsAnimationController.dispose();
     super.dispose();
@@ -358,7 +339,7 @@ class _CameraScreenState extends State<CameraScreen>
   void _resetSession() {
     setState(() {
       _capturedImages.clear();
-      _hasShownAutoWarning = false;
+
       // Reset zoom lock
       // Restore original zoom range
       _controller?.getMaxZoomLevel().then((max) {
@@ -480,7 +461,6 @@ class _CameraScreenState extends State<CameraScreen>
 
       setState(() {
         _capturedImages.add(CapturedImage(file: file, warnings: warnings));
-        _lastCaptureTime = DateTime.now();
 
         if (_capturedImages.length == 1) {
           _minZoom = _currentZoom;
@@ -568,14 +548,6 @@ class _CameraScreenState extends State<CameraScreen>
             child: const Text(AppStrings.understood))
       ],
     );
-  }
-
-  void _resetFlow() {
-    setState(() {
-      _capturedImages.clear();
-      _isProcessing = false;
-    });
-    Navigator.of(context).pop();
   }
 
   Future<void> _showProcessDialog() async {
@@ -796,7 +768,6 @@ class _CameraScreenState extends State<CameraScreen>
               Navigator.pop(dialogContext); // Close bottom sheet
               setState(() {
                 _capturedImages.clear();
-                _hasShownAutoWarning = false;
               });
             },
             child: const Text('Đồng ý', style: TextStyle(color: Colors.red)),
@@ -2228,40 +2199,6 @@ class _CameraScreenState extends State<CameraScreen>
       ),
       // FAB Removed as per request
     );
-  }
-
-  void _showModeExplanation(int index) async {
-    if (index < 0 || index >= _selectorModes.length) return;
-
-    setState(() {
-      _showingModeExplanation = true;
-      _isModeSelectorVisible = false;
-    });
-
-    HapticFeedback.mediumImpact();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => ModeExplanationDialog(
-        mode: _selectorModes[index],
-      ),
-    );
-
-    setState(() {
-      _showingModeExplanation = false;
-    });
-
-    // If user confirmed (pressed "Đã hiểu"), activate the mode
-    if (confirmed == true) {
-      final selectedMode = _selectorModes[index];
-      await _switchModeByType(selectedMode.type);
-
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Đã kích hoạt: ${selectedMode.label}'),
-        duration: const Duration(milliseconds: 800),
-      ));
-    }
   }
 
   void _handleModeSelection() {

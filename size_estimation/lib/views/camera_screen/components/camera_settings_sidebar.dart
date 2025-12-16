@@ -187,31 +187,26 @@ class CameraSettingsSidebar extends StatelessWidget {
                                   currentValue:
                                       '${currentZoom.toStringAsFixed(1)}x',
                                   children: [
-                                    Expanded(
-                                      child: SliderTheme(
-                                        data: SliderThemeData(
-                                          activeTrackColor:
-                                              theme.colorScheme.primary,
-                                          inactiveTrackColor:
-                                              theme.dividerColor,
-                                          thumbColor: Colors.white,
-                                          overlayColor: theme
-                                              .colorScheme.primary
-                                              .withOpacity(0.2),
-                                          trackHeight: 4,
-                                          thumbShape:
-                                              const RoundSliderThumbShape(
-                                                  enabledThumbRadius: 8),
-                                        ),
-                                        child: Slider(
-                                          value: currentZoom.clamp(
-                                              minZoom, maxZoom),
-                                          min: minZoom,
-                                          max: maxZoom,
-                                          onChanged: (minZoom < maxZoom)
-                                              ? onZoomChanged
-                                              : null,
-                                        ),
+                                    SliderTheme(
+                                      data: SliderThemeData(
+                                        activeTrackColor:
+                                            theme.colorScheme.primary,
+                                        inactiveTrackColor: theme.dividerColor,
+                                        thumbColor: Colors.white,
+                                        overlayColor: theme.colorScheme.primary
+                                            .withOpacity(0.2),
+                                        trackHeight: 4,
+                                        thumbShape: const RoundSliderThumbShape(
+                                            enabledThumbRadius: 8),
+                                      ),
+                                      child: Slider(
+                                        value:
+                                            currentZoom.clamp(minZoom, maxZoom),
+                                        min: minZoom,
+                                        max: maxZoom,
+                                        onChanged: (minZoom < maxZoom)
+                                            ? onZoomChanged
+                                            : null,
                                       ),
                                     ),
                                   ],
