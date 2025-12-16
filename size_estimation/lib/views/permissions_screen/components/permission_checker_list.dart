@@ -90,14 +90,14 @@ class _PermissionCheckerListState extends State<PermissionCheckerList> {
     switch (status) {
       case PermissionStatus.granted:
       case PermissionStatus.limited:
-        return Theme.of(context).colorScheme.primary.withOpacity(0.20);
+        return Theme.of(context).colorScheme.primary;
       case PermissionStatus.denied:
-        return Colors.orange.withOpacity(0.10);
+        return Colors.orange; // Semantic Warning Color
       case PermissionStatus.restricted:
       case PermissionStatus.permanentlyDenied:
-        return Colors.red.withOpacity(0.10);
+        return Theme.of(context).colorScheme.error;
       default:
-        return Colors.grey.withOpacity(0.08);
+        return Theme.of(context).colorScheme.onSurface.withOpacity(0.38);
     }
   }
 
@@ -183,7 +183,7 @@ class _PermissionCheckerListState extends State<PermissionCheckerList> {
           ),
           if (_loading)
             Container(
-              color: Colors.black.withOpacity(0.05),
+              color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
               child: const Center(child: CircularProgressIndicator()),
             ),
         ],

@@ -6,10 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:size_estimation/models/camera_intrinsics.dart';
 import 'package:size_estimation/models/captured_image.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
-import 'package:size_estimation/services/photogrammetry_service.dart';
+
 import 'package:size_estimation/services/sensor_service.dart';
 import 'package:size_estimation/views/camera_screen/components/index.dart';
 import 'package:size_estimation/views/camera_screen/components/image_detail_modal.dart';
@@ -55,32 +54,6 @@ class CameraScreen extends StatefulWidget {
 // ... (IsolateData and _isolateEntry helper classes remain the same) ...
 
 // Helper class for isolate data
-class IsolateData {
-  final List<String> imagePaths;
-  final double baseline;
-  final Map<String, dynamic> intrinsicsMap;
-  final bool applyUndistortion;
-
-  IsolateData({
-    required this.imagePaths,
-    required this.baseline,
-    required this.intrinsicsMap,
-    this.applyUndistortion = true,
-  });
-}
-
-// Top-level function for isolate computation
-Future<double> _isolateEntry(IsolateData data) async {
-  final service = PhotogrammetryService();
-  final intrinsics = CameraIntrinsics.fromMap(data.intrinsicsMap);
-  final imageFiles = data.imagePaths.map((path) => File(path)).toList();
-  return await service.estimateHeightFromBaseline(
-    images: imageFiles,
-    knownBaselineCm: data.baseline,
-    intrinsics: intrinsics,
-    applyUndistortion: data.applyUndistortion,
-  );
-}
 
 class _CameraScreenState extends State<CameraScreen>
     with TickerProviderStateMixin {
@@ -612,139 +585,8 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _showBaselineDialog(List<dynamic>? _) async {
-    // Note: Parameter kept to match signature if needed, or better remove it
-    // but simplifying to just void if possible. Let's do a clean void.
-    // Actually, I'll update the signature below.
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: true,
-      enableDrag: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return CaptureCompletion(
-          images: _capturedImages,
-          onRetakeAll: () {
-            setState(() {
-              _capturedImages.clear();
-              _hasShownAutoWarning = false;
-            });
-            Navigator.pop(ctx);
-          },
-          onSubmit: (baseline) {
-            Navigator.pop(ctx);
-            _runPhotogrammetry(baseline);
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _runPhotogrammetry(double baseline) async {
-    setState(() => _isProcessing = true);
-
-    // Give UI a moment to render the loading state
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // Prepare Intrinsics
-    double width = _controller!.value.previewSize?.width ?? 1080;
-    double height = _controller!.value.previewSize?.height ?? 1920;
-    if (width > height) {
-      double t = width;
-      width = height;
-      height = t;
-    }
-
-    // Rough approximation: f ~= width (approx 53 deg FOV)
-    final intrinsics = CameraIntrinsics(
-      focalLength: width * 1.2,
-      cx: width / 2,
-      cy: height / 2,
-      sensorWidth: 6.4, // typical 1/2" sensor mm
-      sensorHeight: 4.8,
-      distortionCoefficients: List.filled(
-          5, 0.0), // Zero distortion assumption for now (or minimal)
-    );
-
-    try {
-      // Run heavy computation in a background isolate
-      // We need to pass serializable data. File paths are serializable.
-      final imagePaths = _capturedImages.map((e) => e.file.path).toList();
-
-      final result = await compute(
-        _isolateEntry,
-        IsolateData(
-          imagePaths: imagePaths,
-          baseline: baseline,
-          intrinsicsMap: intrinsics.toMap(),
-          applyUndistortion: _researcherConfig.applyUndistortion,
-        ),
-      );
-
-      if (!mounted) return;
-      _showResultDialog(result);
-    } catch (e) {
-      if (!mounted) return;
-      _showErrorDetails(e.toString());
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
-    }
-  }
-
-  void _showResultDialog(double height) {
-    CommonAlertDialog.show(
-      context: context,
-      title: AppStrings.resultTitle,
-      icon: Icons.check_circle,
-      iconColor: Colors.green,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 64),
-          const SizedBox(height: 16),
-          Text(
-            '${height.toStringAsFixed(2)} cm',
-            style: const TextStyle(
-                fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          Text(AppStrings.estimatedHeight,
-              style: TextStyle(color: Colors.white70)),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            Navigator.pop(context);
-            setState(() {
-              _capturedImages.clear();
-            });
-          },
-          child: const Text(AppStrings.refresh),
-        ),
-      ],
-    );
-  }
-
-  void _showErrorDetails(String error) {
-    CommonAlertDialog.show(
-      context: context,
-      title: AppStrings.errorTitle,
-      icon: Icons.error_outline,
-      iconColor: Colors.red,
-      contentText: error,
-      actions: [
-        TextButton(
-          onPressed: () {
-            Navigator.pop(context);
-            // Do NOT clear images on error, allow user to delete/retry
-          },
-          child: const Text(AppStrings.close),
-        ),
-      ],
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('TODO: Implement Capture Completion')),
     );
   }
 
@@ -1589,864 +1431,799 @@ class _CameraScreenState extends State<CameraScreen>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Column(
+      body: Stack(
         children: [
-          _buildTopControlBar(context),
-          Expanded(
-            child: Stack(
-              children: [
-                // 0. Header for Ground Plane Mode (Custom Requirement)
-                if (_groundPlaneMode)
-                  Positioned(
-                    top: 50,
-                    left: 0,
-                    right: 0,
-                    child: SafeArea(
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white24),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              "📐 ĐO TRÊN MẶT SÀN",
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                StreamBuilder<IMUOrientation>(
-                                  stream: _imuService.orientationStream,
-                                  builder: (context, snapshot) {
-                                    final pitch = snapshot.data?.pitchDegrees
-                                            .toStringAsFixed(0) ??
-                                        "--";
-                                    // Check if within reasonable range (e.g., -90 to 0)
-                                    // Just showing raw value as requested
-                                    return Text(
-                                      "Pitch: $pitch° ✅", // TODO: Add logic for checkmark
-                                      style: const TextStyle(
-                                          color: Colors.greenAccent,
-                                          fontSize: 13),
-                                    );
-                                  },
-                                ),
-                                Text(
-                                  "h: ${_cameraHeightMeters.toStringAsFixed(1)}m",
-                                  style: const TextStyle(
-                                      color: Colors.white70, fontSize: 13),
-                                ),
-                              ],
-                            )
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+          // 1. Camera Preview OR Frozen Image
+          IgnorePointer(
+            // Disable touches on camera preview if measuring (so points can be selected)
+            // But if frozen, we need touches? No, GroundPlaneSelector handles touches.
+            ignoring:
+                _groundPlaneMode || _planarObjectMode || _verticalObjectMode,
 
-                // 1. Camera Preview OR Frozen Image
-                IgnorePointer(
-                  // Disable touches on camera preview if measuring (so points can be selected)
-                  // But if frozen, we need touches? No, GroundPlaneSelector handles touches.
-                  ignoring: _groundPlaneMode ||
-                      _planarObjectMode ||
-                      _verticalObjectMode,
-
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: AspectRatio(
-                      aspectRatio: aspectRatio,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          if (_isFrozen && _frozenImageFile != null)
-                            Image.file(
-                              _frozenImageFile!,
-                              fit: BoxFit.cover,
-                            )
-                          else if (_capturedImages.length >= _requiredImages)
-                            Container(color: Colors.black)
-                          else if (_isInitialized && _controller != null)
-                            ClipRect(
-                              child: OverflowBox(
-                                alignment: Alignment.center,
-                                child: FittedBox(
-                                  fit: BoxFit.cover,
-                                  child: SizedBox(
-                                    width: MediaQuery.of(context).size.width,
-                                    height: MediaQuery.of(context).size.width *
-                                        _controller!.value.aspectRatio,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        border: (_showIMU &&
-                                                _currentOrientation != null)
-                                            ? Border.all(
-                                                color:
-                                                    _imuService.isDeviceLevel()
-                                                        ? Colors.green
-                                                        : Colors.orange,
-                                                width: 4,
-                                              )
-                                            : null,
-                                      ),
-                                      child: CameraPreview(_controller!),
-                                    ),
-                                  ),
+            child: Align(
+              alignment: Alignment.center,
+              child: AspectRatio(
+                aspectRatio: aspectRatio,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_isFrozen && _frozenImageFile != null)
+                      Image.file(
+                        _frozenImageFile!,
+                        fit: BoxFit.cover,
+                      )
+                    else if (_capturedImages.length >= _requiredImages)
+                      Container(color: Colors.black)
+                    else if (_isInitialized && _controller != null)
+                      ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.center,
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: MediaQuery.of(context).size.width,
+                              height: MediaQuery.of(context).size.width *
+                                  _controller!.value.aspectRatio,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  border:
+                                      (_showIMU && _currentOrientation != null)
+                                          ? Border.all(
+                                              color: _imuService.isDeviceLevel()
+                                                  ? Colors.green
+                                                  : Colors.orange,
+                                              width: 4,
+                                            )
+                                          : null,
                                 ),
-                              ),
-                            )
-                          else
-                            const Center(
-                                child: CircularProgressIndicator(
-                                    color: Colors.white)),
-                          if (_isInitialized)
-                            Positioned.fill(
-                              child: OverlapGuide(
-                                images: List.of(_capturedImages),
-                                requiredImages: _requiredImages,
-                                aspectRatio: aspectRatio,
+                                child: CameraPreview(_controller!),
                               ),
                             ),
-                          if (_isInitialized)
-                            Positioned.fill(
-                              child: GridOverlay(
-                                  visible: _researcherConfig.showGrid),
+                          ),
+                        ),
+                      )
+                    else
+                      const Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.white)),
+                    if (_isInitialized)
+                      Positioned.fill(
+                        child: OverlapGuide(
+                          images: List.of(_capturedImages),
+                          requiredImages: _requiredImages,
+                          aspectRatio: aspectRatio,
+                        ),
+                      ),
+                    if (_isInitialized)
+                      Positioned.fill(
+                        child: GridOverlay(visible: _researcherConfig.showGrid),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // 9. Ground Plane Selector (Measurement Mode) (Moved)
+          if (_groundPlaneMode &&
+              (_isFrozen || (_isInitialized && _controller != null)))
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.center,
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: GroundPlaneSelector(
+                    imageSize: Size(
+                      _controller?.value.previewSize?.width.toDouble() ?? 1920,
+                      _controller?.value.previewSize?.height.toDouble() ?? 1080,
+                    ),
+                    measurement: _currentMeasurement,
+                    showResult: _isGroundPlaneResultVisible,
+                    onCloseResult: () =>
+                        setState(() => _isGroundPlaneResultVisible = false),
+                    pointA: _groundPointA,
+                    pointB: _groundPointB,
+                    onStateChanged: (p1, p2) {
+                      setState(() {
+                        _groundPointA = p1;
+                        _groundPointB = p2;
+                        if (p1 == null || p2 == null) {
+                          _currentMeasurement = null;
+                        }
+                      });
+                    },
+                    onPointsSelected: (pointA, pointB) {
+                      _performGroundPlaneMeasurement(pointA, pointB);
+                    },
+                    onClear: () {
+                      setState(() {
+                        _currentMeasurement = null;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+
+          // Instruction (Bottom)
+          if (_groundPlaneMode)
+            Positioned(
+              bottom: 120,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(
+                    _isFrozen
+                        ? "Chế độ ảnh tĩnh: Điều chỉnh điểm đo"
+                        : "Hướng dẫn: Chạm 2 điểm cần đo",
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ),
+              ),
+            ),
+
+          // 10. Planar Object Selector (Measurement Mode) (Moved)
+          if (_planarObjectMode &&
+              _controller != null &&
+              _controller!.value.isInitialized)
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.center,
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: PlanarObjectSelector(
+                    imageSize: Size(
+                      _controller!.value.previewSize?.width.toDouble() ?? 1920,
+                      _controller!.value.previewSize?.height.toDouble() ?? 1080,
+                    ),
+                    measurement: _currentPlanarMeasurement,
+                    referenceObject: _referenceObject,
+                    showResult: _isPlanarResultVisible,
+                    onCloseResult: () =>
+                        setState(() => _isPlanarResultVisible = false),
+                    onCornersSelected: (corners) {
+                      _performPlanarObjectMeasurement(corners);
+                    },
+                    onClear: () {
+                      setState(() {
+                        _currentPlanarMeasurement = null;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+
+          // 11. Vertical Object Selector (Measurement Mode) (Moved)
+          if (_verticalObjectMode &&
+              _controller != null &&
+              _controller!.value.isInitialized)
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.center,
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: VerticalObjectSelector(
+                    imageSize: Size(
+                      _controller!.value.previewSize?.width.toDouble() ?? 1920,
+                      _controller!.value.previewSize?.height.toDouble() ?? 1080,
+                    ),
+                    measurement: _currentVerticalMeasurement,
+                    onPointsSelected: (top, bottom) {
+                      _performVerticalObjectMeasurement(top, bottom);
+                    },
+                    onClear: () {
+                      setState(() {
+                        _currentVerticalMeasurement = null;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+
+          // Mode Selector Gesture Zone (Left Edge)
+          Positioned(
+            left: 0,
+            top: 100, // Avoid Top Bar
+            bottom: 150, // Avoid Bottom Bar
+            width: 40, // Trigger Zone Width
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onPanStart: (details) {
+                setState(() {
+                  _ignoreNextPanEnd = false;
+                  _isModeSelectorVisible = true;
+                  _dragStartPosition =
+                      details.localPosition + const Offset(0, 100);
+                  _currentDragPosition =
+                      details.localPosition + const Offset(0, 100);
+                });
+                HapticFeedback.lightImpact();
+              },
+              onPanUpdate: (details) {
+                setState(() {
+                  _currentDragPosition =
+                      details.localPosition + const Offset(0, 100);
+                });
+              },
+              onPanEnd: (details) {
+                if (_ignoreNextPanEnd) {
+                  setState(() {
+                    _ignoreNextPanEnd = false;
+                    _isModeSelectorVisible = false;
+                  });
+                  return;
+                }
+                _handleModeSelection();
+                setState(() {
+                  _isModeSelectorVisible = false;
+                });
+              },
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+
+          // Mode Selector Overlay display
+          if (_isModeSelectorVisible)
+            Positioned.fill(
+              child: EstimationModeSelector(
+                center: _dragStartPosition,
+                currentDragPosition: _currentDragPosition,
+                isVisible: true,
+                modes: _selectorModes,
+                onDwellStarted: () => setState(() => _ignoreNextPanEnd = true),
+                onModeSelected: (mode) {
+                  ScaffoldMessenger.of(context).clearSnackBars();
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Đã chọn: ${mode.label}'),
+                      duration: const Duration(milliseconds: 500)));
+                  _switchModeByType(mode.type);
+                  setState(() => _isModeSelectorVisible = false);
+                },
+              ),
+            ),
+
+          // 5. Bottom Controls
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Color(0xFF1D2125).withOpacity(0.95),
+                    Colors.transparent
+                  ],
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Capture Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Gallery / Review Button
+                      if (!_isFrozen)
+                        GestureDetector(
+                          onTap:
+                              _capturedImages.isNotEmpty ? _openGallery : null,
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF22272B).withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: Colors.white.withOpacity(0.3)),
                             ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // 9. Ground Plane Selector (Measurement Mode) (Moved)
-                // 9. Ground Plane Selector (Measurement Mode) (Moved)
-                if (_groundPlaneMode &&
-                    (_isFrozen || (_isInitialized && _controller != null)))
-                  Positioned.fill(
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: AspectRatio(
-                        aspectRatio: aspectRatio,
-                        child: GroundPlaneSelector(
-                          imageSize: Size(
-                            _controller?.value.previewSize?.width.toDouble() ??
-                                1920,
-                            _controller?.value.previewSize?.height.toDouble() ??
-                                1080,
-                          ),
-                          measurement: _currentMeasurement,
-                          showResult: _isGroundPlaneResultVisible,
-                          onCloseResult: () => setState(
-                              () => _isGroundPlaneResultVisible = false),
-                          pointA: _groundPointA,
-                          pointB: _groundPointB,
-                          onStateChanged: (p1, p2) {
-                            setState(() {
-                              _groundPointA = p1;
-                              _groundPointB = p2;
-                              if (p1 == null || p2 == null) {
-                                _currentMeasurement = null;
-                              }
-                            });
-                          },
-                          onPointsSelected: (pointA, pointB) {
-                            _performGroundPlaneMeasurement(pointA, pointB);
-                          },
-                          onClear: () {
-                            setState(() {
-                              _currentMeasurement = null;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // Instruction (Bottom)
-                if (_groundPlaneMode)
-                  Positioned(
-                    bottom: 120,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8)),
-                        child: Text(
-                          _isFrozen
-                              ? "Chế độ ảnh tĩnh: Điều chỉnh điểm đo"
-                              : "Hướng dẫn: Chạm 2 điểm cần đo",
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 14),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // 10. Planar Object Selector (Measurement Mode) (Moved)
-                if (_planarObjectMode &&
-                    _controller != null &&
-                    _controller!.value.isInitialized)
-                  Positioned.fill(
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: AspectRatio(
-                        aspectRatio: aspectRatio,
-                        child: PlanarObjectSelector(
-                          imageSize: Size(
-                            _controller!.value.previewSize?.width.toDouble() ??
-                                1920,
-                            _controller!.value.previewSize?.height.toDouble() ??
-                                1080,
-                          ),
-                          measurement: _currentPlanarMeasurement,
-                          referenceObject: _referenceObject,
-                          showResult: _isPlanarResultVisible,
-                          onCloseResult: () =>
-                              setState(() => _isPlanarResultVisible = false),
-                          onCornersSelected: (corners) {
-                            _performPlanarObjectMeasurement(corners);
-                          },
-                          onClear: () {
-                            setState(() {
-                              _currentPlanarMeasurement = null;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // 11. Vertical Object Selector (Measurement Mode) (Moved)
-                if (_verticalObjectMode &&
-                    _controller != null &&
-                    _controller!.value.isInitialized)
-                  Positioned.fill(
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: AspectRatio(
-                        aspectRatio: aspectRatio,
-                        child: VerticalObjectSelector(
-                          imageSize: Size(
-                            _controller!.value.previewSize?.width.toDouble() ??
-                                1920,
-                            _controller!.value.previewSize?.height.toDouble() ??
-                                1080,
-                          ),
-                          measurement: _currentVerticalMeasurement,
-                          onPointsSelected: (top, bottom) {
-                            _performVerticalObjectMeasurement(top, bottom);
-                          },
-                          onClear: () {
-                            setState(() {
-                              _currentVerticalMeasurement = null;
-                            });
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // Mode Selector Gesture Zone (Left Edge)
-                Positioned(
-                  left: 0,
-                  top: 100, // Avoid Top Bar
-                  bottom: 150, // Avoid Bottom Bar
-                  width: 40, // Trigger Zone Width
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onPanStart: (details) {
-                      setState(() {
-                        _ignoreNextPanEnd = false;
-                        _isModeSelectorVisible = true;
-                        _dragStartPosition =
-                            details.localPosition + const Offset(0, 100);
-                        _currentDragPosition =
-                            details.localPosition + const Offset(0, 100);
-                      });
-                      HapticFeedback.lightImpact();
-                    },
-                    onPanUpdate: (details) {
-                      setState(() {
-                        _currentDragPosition =
-                            details.localPosition + const Offset(0, 100);
-                      });
-                    },
-                    onPanEnd: (details) {
-                      if (_ignoreNextPanEnd) {
-                        setState(() {
-                          _ignoreNextPanEnd = false;
-                          _isModeSelectorVisible = false;
-                        });
-                        return;
-                      }
-                      _handleModeSelection();
-                      setState(() {
-                        _isModeSelectorVisible = false;
-                      });
-                    },
-                    child: Container(color: Colors.transparent),
-                  ),
-                ),
-
-                // Mode Selector Overlay display
-                if (_isModeSelectorVisible)
-                  Positioned.fill(
-                    child: EstimationModeSelector(
-                      center: _dragStartPosition,
-                      currentDragPosition: _currentDragPosition,
-                      isVisible: true,
-                      modes: _selectorModes,
-                      onDwellStarted: () =>
-                          setState(() => _ignoreNextPanEnd = true),
-                      onModeSelected: (mode) {
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text('Đã chọn: ${mode.label}'),
-                            duration: const Duration(milliseconds: 500)));
-                        _switchModeByType(mode.type);
-                        setState(() => _isModeSelectorVisible = false);
-                      },
-                    ),
-                  ),
-
-                // 5. Bottom Controls
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 32),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          Color(0xFF1D2125).withOpacity(0.95),
-                          Colors.transparent
-                        ],
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Capture Row
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            // Gallery / Review Button
-                            if (!_isFrozen)
-                              GestureDetector(
-                                onTap: _capturedImages.isNotEmpty
-                                    ? _openGallery
-                                    : null,
-                                child: Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF22272B)
-                                        .withOpacity(0.8),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                        color: Colors.white.withOpacity(0.3)),
-                                  ),
-                                  child: _capturedImages.isNotEmpty
-                                      ? Stack(
-                                          alignment: Alignment.center,
-                                          children: [
-                                            // Stack effect
-                                            if (_capturedImages.length > 1)
-                                              Transform.rotate(
-                                                angle: 0.2,
-                                                child: Container(
-                                                  width: 44,
-                                                  height: 44,
-                                                  decoration: BoxDecoration(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                    image: DecorationImage(
-                                                      image: FileImage(
-                                                          _capturedImages[
-                                                                  _capturedImages
-                                                                          .length -
-                                                                      2]
-                                                              .file),
-                                                      fit: BoxFit.cover,
-                                                      opacity: 0.6,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            // Top Image
-                                            Container(
-                                              width: 48,
-                                              height: 48,
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                border: Border.all(
-                                                    color: _capturedImages
-                                                            .last.hasWarnings
-                                                        ? Colors.orange
-                                                        : Colors.white,
-                                                    width: _capturedImages
-                                                            .last.hasWarnings
-                                                        ? 2.5
-                                                        : 1.5),
-                                                image: DecorationImage(
-                                                  image: FileImage(
-                                                      _capturedImages
-                                                          .last.file),
-                                                  fit: BoxFit.cover,
-                                                ),
+                            child: _capturedImages.isNotEmpty
+                                ? Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      // Stack effect
+                                      if (_capturedImages.length > 1)
+                                        Transform.rotate(
+                                          angle: 0.2,
+                                          child: Container(
+                                            width: 44,
+                                            height: 44,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              image: DecorationImage(
+                                                image: FileImage(
+                                                    _capturedImages[
+                                                            _capturedImages
+                                                                    .length -
+                                                                2]
+                                                        .file),
+                                                fit: BoxFit.cover,
+                                                opacity: 0.6,
                                               ),
                                             ),
-                                          ],
-                                        )
-                                      : Icon(Icons.photo_library_outlined,
-                                          color: Colors.white.withOpacity(0.5)),
+                                          ),
+                                        ),
+                                      // Top Image
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                              color: _capturedImages
+                                                      .last.hasWarnings
+                                                  ? Colors.orange
+                                                  : Colors.white,
+                                              width: _capturedImages
+                                                      .last.hasWarnings
+                                                  ? 2.5
+                                                  : 1.5),
+                                          image: DecorationImage(
+                                            image: FileImage(
+                                                _capturedImages.last.file),
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Icon(Icons.photo_library_outlined,
+                                    color: Colors.white.withOpacity(0.5)),
+                          ),
+                        ),
+
+                      // Capture Button
+                      Builder(builder: (context) {
+                        // Special frozen UI
+                        if (_isFrozen) {
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _isFrozen = false;
+                                    _frozenImageFile = null;
+                                  });
+                                  _controller!.resumePreview();
+                                },
+                                icon: const Icon(Icons.refresh),
+                                label: const Text("Chụp lại"),
+                                style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.grey),
+                              ),
+                              const SizedBox(width: 16),
+                              FilledButton.icon(
+                                onPressed: () {
+                                  // Save currently selected points as result
+                                  // Or just capture this as evidence?
+                                  // For now, assume "Done" means save to list
+                                  setState(() {
+                                    _isFrozen = false;
+                                    // Add to captured images list properly
+                                    // But wait, the file is _frozenImageFile
+                                    if (_frozenImageFile != null) {
+                                      _capturedImages.add(CapturedImage(
+                                          file: _frozenImageFile!));
+                                    }
+                                    _frozenImageFile = null;
+                                  });
+                                  _controller!.resumePreview();
+                                },
+                                icon: const Icon(Icons.check),
+                                label: const Text("Lưu"),
+                              ),
+                            ],
+                          );
+                        }
+
+                        // Check if mode is selected
+                        bool modeMissing = _capturedImages.isEmpty &&
+                            _selectedModeType == null;
+
+                        // Check if points are selected (Measurement done)
+                        bool measurementMissing = false;
+                        if (_selectedModeType ==
+                            EstimationModeType.groundPlane) {
+                          // If ground plane, we allows capture even if missing points (to enter freeze)
+                          measurementMissing = false;
+                        } else if (_selectedModeType ==
+                            EstimationModeType.planarObject) {
+                          measurementMissing =
+                              _currentPlanarMeasurement == null;
+                        } else if (_selectedModeType ==
+                            EstimationModeType.singleView) {
+                          measurementMissing =
+                              _currentVerticalMeasurement == null;
+                        }
+
+                        final isCaptureDisabled =
+                            modeMissing || measurementMissing;
+
+                        return GestureDetector(
+                          onTap: () {
+                            if (_multiFrameMode && _isMeasuringMultiFrame) {
+                              _multiFrameTimer?.cancel();
+                              setState(() => _isMeasuringMultiFrame = false);
+                            } else {
+                              _captureImage(); // Handles both single and multi-frame start
+                            }
+                          },
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: isCaptureDisabled
+                                          ? Colors.grey
+                                          : (_multiFrameMode
+                                              ? Colors.redAccent
+                                              : Colors.white),
+                                      width: 4),
+                                ),
+                                child: Container(
+                                  margin: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    shape: (_multiFrameMode &&
+                                            _isMeasuringMultiFrame)
+                                        ? BoxShape.rectangle
+                                        : BoxShape.circle,
+                                    borderRadius: (_multiFrameMode &&
+                                            _isMeasuringMultiFrame)
+                                        ? BorderRadius.circular(8)
+                                        : null,
+                                    color: isCaptureDisabled
+                                        ? Colors.transparent
+                                        : (_multiFrameMode
+                                            ? Colors.redAccent
+                                            : Colors.white),
+                                  ),
+                                  // Scale down inner container if "Stop" (Square)
+                                  transform: (_multiFrameMode &&
+                                          _isMeasuringMultiFrame)
+                                      ? Matrix4.diagonal3Values(0.5, 0.5, 1.0)
+                                      : Matrix4.identity(),
+                                  transformAlignment: Alignment.center,
                                 ),
                               ),
-
-                            // Capture Button
-                            Builder(builder: (context) {
-                              // Special frozen UI
-                              if (_isFrozen) {
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    FilledButton.icon(
-                                      onPressed: () {
-                                        setState(() {
-                                          _isFrozen = false;
-                                          _frozenImageFile = null;
-                                        });
-                                        _controller!.resumePreview();
-                                      },
-                                      icon: const Icon(Icons.refresh),
-                                      label: const Text("Chụp lại"),
-                                      style: FilledButton.styleFrom(
-                                          backgroundColor: Colors.grey),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    FilledButton.icon(
-                                      onPressed: () {
-                                        // Save currently selected points as result
-                                        // Or just capture this as evidence?
-                                        // For now, assume "Done" means save to list
-                                        setState(() {
-                                          _isFrozen = false;
-                                          // Add to captured images list properly
-                                          // But wait, the file is _frozenImageFile
-                                          if (_frozenImageFile != null) {
-                                            _capturedImages.add(CapturedImage(
-                                                file: _frozenImageFile!));
-                                          }
-                                          _frozenImageFile = null;
-                                        });
-                                        _controller!.resumePreview();
-                                      },
-                                      icon: const Icon(Icons.check),
-                                      label: const Text("Lưu"),
-                                    ),
-                                  ],
-                                );
-                              }
-
-                              // Check if mode is selected
-                              bool modeMissing = _capturedImages.isEmpty &&
-                                  _selectedModeType == null;
-
-                              // Check if points are selected (Measurement done)
-                              bool measurementMissing = false;
-                              if (_selectedModeType ==
-                                  EstimationModeType.groundPlane) {
-                                // If ground plane, we allows capture even if missing points (to enter freeze)
-                                measurementMissing = false;
-                              } else if (_selectedModeType ==
-                                  EstimationModeType.planarObject) {
-                                measurementMissing =
-                                    _currentPlanarMeasurement == null;
-                              } else if (_selectedModeType ==
-                                  EstimationModeType.singleView) {
-                                measurementMissing =
-                                    _currentVerticalMeasurement == null;
-                              }
-
-                              final isCaptureDisabled =
-                                  modeMissing || measurementMissing;
-
-                              return GestureDetector(
-                                onTap: () {
-                                  if (_multiFrameMode &&
-                                      _isMeasuringMultiFrame) {
-                                    _multiFrameTimer?.cancel();
-                                    setState(
-                                        () => _isMeasuringMultiFrame = false);
-                                  } else {
-                                    _captureImage(); // Handles both single and multi-frame start
-                                  }
-                                },
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    Container(
-                                      width: 80,
-                                      height: 80,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: isCaptureDisabled
-                                                ? Colors.grey
-                                                : (_multiFrameMode
-                                                    ? Colors.redAccent
-                                                    : Colors.white),
-                                            width: 4),
-                                      ),
-                                      child: Container(
-                                        margin: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          shape: (_multiFrameMode &&
-                                                  _isMeasuringMultiFrame)
-                                              ? BoxShape.rectangle
-                                              : BoxShape.circle,
-                                          borderRadius: (_multiFrameMode &&
-                                                  _isMeasuringMultiFrame)
-                                              ? BorderRadius.circular(8)
-                                              : null,
-                                          color: isCaptureDisabled
-                                              ? Colors.transparent
-                                              : (_multiFrameMode
-                                                  ? Colors.redAccent
-                                                  : Colors.white),
-                                        ),
-                                        // Scale down inner container if "Stop" (Square)
-                                        transform: (_multiFrameMode &&
-                                                _isMeasuringMultiFrame)
-                                            ? Matrix4.diagonal3Values(
-                                                0.5, 0.5, 1.0)
-                                            : Matrix4.identity(),
-                                        transformAlignment: Alignment.center,
-                                      ),
-                                    ),
-                                    if (isCaptureDisabled)
-                                      const Icon(Icons.block,
-                                          color: Colors.grey, size: 40),
-                                    if (_isCapturing)
-                                      const SizedBox(
-                                        width: 80,
-                                        height: 80,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.redAccent,
-                                          strokeWidth: 4,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }),
-
-                            // Complete Button (Right Side)
-                            if (_capturedImages.length >= _requiredImages)
-                              GestureDetector(
-                                onTap: _showProcessDialog,
-                                child: Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Theme.of(context).primaryColor,
-                                    border: Border.all(
-                                        color: Colors.white, width: 2),
+                              if (isCaptureDisabled)
+                                const Icon(Icons.block,
+                                    color: Colors.grey, size: 40),
+                              if (_isCapturing)
+                                const SizedBox(
+                                  width: 80,
+                                  height: 80,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.redAccent,
+                                    strokeWidth: 4,
                                   ),
-                                  child: const Icon(Icons.check,
-                                      color: Colors.white, size: 32),
                                 ),
-                              )
-                            else
-                              const SizedBox(width: 56),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
+                            ],
+                          ),
+                        );
+                      }),
+
+                      // Complete Button (Right Side)
+                      if (_capturedImages.length >= _requiredImages)
+                        GestureDetector(
+                          onTap: _showProcessDialog,
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Theme.of(context).primaryColor,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: const Icon(Icons.check,
+                                color: Colors.white, size: 32),
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 56),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+
+          // Right Edge Swipe Detector for Settings
+          Positioned(
+            right: 0,
+            top: 100,
+            bottom: 100,
+            width: 20,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragEnd: (details) {
+                if (details.primaryVelocity! < -500) {
+                  // Swipe Left
+                  if (_settingsAnimationController.status ==
+                      AnimationStatus.dismissed) {
+                    _toggleSettings();
+                  }
+                }
+              },
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+
+          if (_showIMU && _currentOrientation != null)
+            DraggableOverlay(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Euler Angles
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('EULER (deg)',
+                            style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 9,
+                                letterSpacing: 0.5,
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'R: ${_currentOrientation!.rollDegrees.toStringAsFixed(1)}°',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'P: ${_currentOrientation!.pitchDegrees.toStringAsFixed(1)}°',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'Y: ${_currentOrientation!.yawDegrees.toStringAsFixed(1)}°',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    // Rotation Matrix
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('ROTATION MATRIX R',
+                            style: TextStyle(
+                                color: Colors.cyan,
+                                fontSize: 9,
+                                letterSpacing: 0.5,
+                                fontWeight: FontWeight.bold)),
+                        ..._currentOrientation!
+                            .getRotationMatrixAsList()
+                            .map((row) => Text(
+                                  '[${row[0].toStringAsFixed(2)}, ${row[1].toStringAsFixed(2)}, ${row[2].toStringAsFixed(2)}]',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontFamily: 'Courier',
+                                      fontWeight: FontWeight.bold),
+                                )),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    // Gravity
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('GRAVITY',
+                            style: TextStyle(
+                                color: Colors.purpleAccent,
+                                fontSize: 9,
+                                letterSpacing: 0.5,
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'x: ${_currentOrientation!.gravity.x.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'y: ${_currentOrientation!.gravity.y.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'z: ${_currentOrientation!.gravity.z.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 6. Settings Overlay (Moved to ensure On Top Z-index)
+          // Top Control Bar (Overlay)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildTopControlBar(context),
+          ),
+          CameraSettingsSidebar(
+            animation: _settingsAnimation,
+            isFlashOn: _isFlashOn,
+            isInitialized: _isInitialized,
+            controller: _controller,
+            onToggleFlash: _toggleFlash,
+            onClose: _toggleSettings,
+            settingsButtonKey: _settingsButtonKey,
+            timerDuration: _timerDuration,
+            onTimerChanged: (val) => setState(() => _timerDuration = val),
+            timerPresets: _timerPresets,
+            aspectRatioIndex: _aspectRatioIndex,
+            onAspectRatioChanged: (val) {
+              _saveAspectRatio(val);
+              setState(() {
+                _aspectRatioIndex = val;
+                // Reset mode
+                _selectedModeType = null;
+                _groundPlaneMode = false;
+                _planarObjectMode = false;
+                _verticalObjectMode = false;
+                _currentMeasurement = null;
+                _currentPlanarMeasurement = null;
+                _currentVerticalMeasurement = null;
+                _groundPointA = null;
+                _groundPointB = null;
+                _isFrozen = false;
+                _frozenImageFile = null;
+              });
+            },
+            currentZoom: _currentZoom,
+            minZoom: _minZoom,
+            maxZoom: _maxZoom,
+            onZoomChanged: _setZoom,
+            isDebugVisible: _isDebugUiVisible,
+            onToggleDebug: () {
+              setState(() {
+                _isDebugUiVisible = !_isDebugUiVisible;
+                if (!_isDebugUiVisible) {
+                  // Reset all advanced configs
+                  _showKMatrix = false;
+                  _showIMU = false;
+                  _showMathDetails = false;
+                  _applyUndistortion = false;
+                  _edgeSnapping = false;
+                  _multiFrameMode = false;
+                  // _researcherConfig is guaranteed non-null in this scope per linter
+                  _researcherConfig.showGrid = false;
+                  _researcherConfig.applyUndistortion = false;
+                  _researcherConfig.edgeBasedSnapping = false;
+                }
+              });
+            },
+            researcherConfig: _researcherConfig,
+            onConfigChanged: (config) {
+              // Trigger rebuild since config object is mutable and referenced
+              setState(() => _researcherConfig = config);
+            },
+            onShowKMatrix: () {
+              setState(() => _showKMatrix = !_showKMatrix);
+            },
+            onShowIMU: () {
+              setState(() => _showIMU = !_showIMU);
+            },
+            onCalibrationPlayground: () {
+              context.push('/calibration-playground');
+            },
+            applyUndistortion: _applyUndistortion,
+            onUndistortionChanged: (value) =>
+                setState(() => _applyUndistortion = value),
+            edgeSnapping: _edgeSnapping,
+            onEdgeSnappingChanged: (value) =>
+                setState(() => _edgeSnapping = value),
+            multiFrameMode: _multiFrameMode,
+            onMultiFrameModeChanged: (value) =>
+                setState(() => _multiFrameMode = value),
+            onShowMathDetails: () {
+              setState(() => _showMathDetails = !_showMathDetails);
+            },
+          ),
+
+          // 7. K Matrix Overlay (Researcher Mode)
+          if (_showKMatrix)
+            Positioned(
+              top: 100,
+              left: 0,
+              right: 0,
+              child: KMatrixOverlay(
+                profile: _activeProfile,
+                kOut: _currentKOut, // Dynamic K_out
+                onClose: () => setState(() => _showKMatrix = false),
+              ),
+            ),
+
+          // 8.1 Math Details Overlay (Researcher Mode)
+          if (_showMathDetails)
+            MathDetailsOverlay(
+              mode: _groundPlaneMode
+                  ? 'ground'
+                  : _planarObjectMode
+                      ? 'planar'
+                      : 'vertical', // Assuming one mode is active at a time
+              onClose: () => setState(() => _showMathDetails = false),
+            ),
+
+          // 12. Loading Overlay
+          if (_isProcessing)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                        "Đang xử lý Photogrammetry...\nViệc này có thể mất vài giây.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white)),
+                  ],
+                ),
+              ),
+            ),
+
+          // 8. Countdown Overlay
+          if (_isCountingDown)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black45,
+                child: Center(
+                  child: Text(
+                    '$_countdownSeconds',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 120,
+                      fontWeight: FontWeight.bold,
+                      shadows: [
+                        Shadow(
+                            color: Colors.black54,
+                            blurRadius: 10,
+                            offset: Offset(0, 4)),
                       ],
                     ),
                   ),
                 ),
-
-                // Right Edge Swipe Detector for Settings
-                Positioned(
-                  right: 0,
-                  top: 100,
-                  bottom: 100,
-                  width: 20,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onHorizontalDragEnd: (details) {
-                      if (details.primaryVelocity! < -500) {
-                        // Swipe Left
-                        if (_settingsAnimationController.status ==
-                            AnimationStatus.dismissed) {
-                          _toggleSettings();
-                        }
-                      }
-                    },
-                    child: Container(color: Colors.transparent),
-                  ),
-                ),
-
-                if (_showIMU && _currentOrientation != null)
-                  DraggableOverlay(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Euler Angles
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('EULER (deg)',
-                                  style: TextStyle(
-                                      color: Colors.orange,
-                                      fontSize: 9,
-                                      letterSpacing: 0.5,
-                                      fontWeight: FontWeight.bold)),
-                              Text(
-                                  'R: ${_currentOrientation!.rollDegrees.toStringAsFixed(1)}°',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontFamily: 'Courier',
-                                      fontWeight: FontWeight.bold)),
-                              Text(
-                                  'P: ${_currentOrientation!.pitchDegrees.toStringAsFixed(1)}°',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontFamily: 'Courier',
-                                      fontWeight: FontWeight.bold)),
-                              Text(
-                                  'Y: ${_currentOrientation!.yawDegrees.toStringAsFixed(1)}°',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontFamily: 'Courier',
-                                      fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          const SizedBox(width: 16),
-                          // Rotation Matrix
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('ROTATION MATRIX R',
-                                  style: TextStyle(
-                                      color: Colors.cyan,
-                                      fontSize: 9,
-                                      letterSpacing: 0.5,
-                                      fontWeight: FontWeight.bold)),
-                              ..._currentOrientation!
-                                  .getRotationMatrixAsList()
-                                  .map((row) => Text(
-                                        '[${row[0].toStringAsFixed(2)}, ${row[1].toStringAsFixed(2)}, ${row[2].toStringAsFixed(2)}]',
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontFamily: 'Courier',
-                                            fontWeight: FontWeight.bold),
-                                      )),
-                            ],
-                          ),
-                          const SizedBox(width: 16),
-                          // Gravity
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('GRAVITY',
-                                  style: TextStyle(
-                                      color: Colors.purpleAccent,
-                                      fontSize: 9,
-                                      letterSpacing: 0.5,
-                                      fontWeight: FontWeight.bold)),
-                              Text(
-                                  'x: ${_currentOrientation!.gravity.x.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontFamily: 'Courier',
-                                      fontWeight: FontWeight.bold)),
-                              Text(
-                                  'y: ${_currentOrientation!.gravity.y.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontFamily: 'Courier',
-                                      fontWeight: FontWeight.bold)),
-                              Text(
-                                  'z: ${_currentOrientation!.gravity.z.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontFamily: 'Courier',
-                                      fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // 6. Settings Overlay (Moved to ensure On Top Z-index)
-                CameraSettingsSidebar(
-                  animation: _settingsAnimation,
-                  isFlashOn: _isFlashOn,
-                  isInitialized: _isInitialized,
-                  controller: _controller,
-                  onToggleFlash: _toggleFlash,
-                  onClose: _toggleSettings,
-                  settingsButtonKey: _settingsButtonKey,
-                  timerDuration: _timerDuration,
-                  onTimerChanged: (val) => setState(() => _timerDuration = val),
-                  timerPresets: _timerPresets,
-                  aspectRatioIndex: _aspectRatioIndex,
-                  onAspectRatioChanged: (val) {
-                    _saveAspectRatio(val);
-                    setState(() => _aspectRatioIndex = val);
-                  },
-                  currentZoom: _currentZoom,
-                  minZoom: _minZoom,
-                  maxZoom: _maxZoom,
-                  onZoomChanged: _setZoom,
-                  isDebugVisible: _isDebugUiVisible,
-                  onToggleDebug: () {
-                    setState(() {
-                      _isDebugUiVisible = !_isDebugUiVisible;
-                      if (!_isDebugUiVisible) {
-                        // Reset all advanced configs
-                        _showKMatrix = false;
-                        _showIMU = false;
-                        _showMathDetails = false;
-                        _applyUndistortion = false;
-                        _edgeSnapping = false;
-                        _multiFrameMode = false;
-                        // _researcherConfig is guaranteed non-null in this scope per linter
-                        _researcherConfig.showGrid = false;
-                        _researcherConfig.applyUndistortion = false;
-                        _researcherConfig.edgeBasedSnapping = false;
-                      }
-                    });
-                  },
-                  researcherConfig: _researcherConfig,
-                  onConfigChanged: (config) {
-                    // Trigger rebuild since config object is mutable and referenced
-                    setState(() => _researcherConfig = config);
-                  },
-                  onShowKMatrix: () {
-                    setState(() => _showKMatrix = !_showKMatrix);
-                  },
-                  onShowIMU: () {
-                    setState(() => _showIMU = !_showIMU);
-                  },
-                  onCalibrationPlayground: () {
-                    context.push('/calibration-playground');
-                  },
-                  applyUndistortion: _applyUndistortion,
-                  onUndistortionChanged: (value) =>
-                      setState(() => _applyUndistortion = value),
-                  edgeSnapping: _edgeSnapping,
-                  onEdgeSnappingChanged: (value) =>
-                      setState(() => _edgeSnapping = value),
-                  multiFrameMode: _multiFrameMode,
-                  onMultiFrameModeChanged: (value) =>
-                      setState(() => _multiFrameMode = value),
-                  onShowMathDetails: () {
-                    setState(() => _showMathDetails = !_showMathDetails);
-                  },
-                ),
-
-                // 7. K Matrix Overlay (Researcher Mode)
-                if (_showKMatrix)
-                  Positioned(
-                    top: 100,
-                    left: 0,
-                    right: 0,
-                    child: KMatrixOverlay(
-                      profile: _activeProfile,
-                      kOut: _currentKOut, // Dynamic K_out
-                      onClose: () => setState(() => _showKMatrix = false),
-                    ),
-                  ),
-
-                // 8.1 Math Details Overlay (Researcher Mode)
-                if (_showMathDetails)
-                  MathDetailsOverlay(
-                    mode: _groundPlaneMode
-                        ? 'ground'
-                        : _planarObjectMode
-                            ? 'planar'
-                            : 'vertical', // Assuming one mode is active at a time
-                    onClose: () => setState(() => _showMathDetails = false),
-                  ),
-
-                // 12. Loading Overlay
-                if (_isProcessing)
-                  Container(
-                    color: Colors.black54,
-                    child: const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text(
-                              "Đang xử lý Photogrammetry...\nViệc này có thể mất vài giây.",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // 8. Countdown Overlay
-                if (_isCountingDown)
-                  Positioned.fill(
-                    child: Container(
-                      color: Colors.black45,
-                      child: Center(
-                        child: Text(
-                          '$_countdownSeconds',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 120,
-                            fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(
-                                  color: Colors.black54,
-                                  blurRadius: 10,
-                                  offset: Offset(0, 4)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
-          ),
         ],
       ),
       // FAB Removed as per request

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:size_estimation/models/index.dart'; 
+import 'package:size_estimation/models/index.dart';
 
 class PermissionTile extends StatelessWidget {
   final PermissionItem item;
@@ -22,67 +22,83 @@ class PermissionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Chỉ Granted mới được coi là đã cấp. 
+    // Chỉ Granted mới được coi là đã cấp.
     // Nếu bạn muốn cả limited cũng coi là granted, hãy thêm:
     // final bool granted = status == PermissionStatus.granted || status == PermissionStatus.limited;
-    final bool granted = status == PermissionStatus.granted || status == PermissionStatus.limited;
-
+    final bool granted = status == PermissionStatus.granted ||
+        status == PermissionStatus.limited;
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(item.icon, size: 30, color: statusColor),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    item.title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+      // AppTheme default margin is vertical: 8, horizontal: 0.
+      // We want some horizontal margin for the list items usually, or the listview provides it.
+      // Looking at permissions_screen, ListView has no horizontal padding.
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: InkWell(
+        onTap: granted ? null : onRequest,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(item.icon, size: 24, color: statusColor),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.title,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                         ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
+                        if (granted) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            statusLabel,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: statusColor,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                          ),
+                        ]
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              item.description,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                // Nút bị disable nếu đã granted hoặc limited
-                onPressed: granted ? null : onRequest, 
-                icon: Icon(granted ? Icons.check : Icons.settings),
-                label: Text(buttonLabel),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: granted ? Colors.grey : statusColor,
-                ),
+                  if (!granted)
+                    OutlinedButton(
+                      onPressed: onRequest,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: statusColor,
+                        side: BorderSide(color: statusColor.withOpacity(0.5)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(buttonLabel),
+                    )
+                  else
+                    Icon(Icons.check_circle,
+                        color: Theme.of(context).colorScheme.primary, size: 24),
+                ],
               ),
-            ),
-          ],
+              if (!granted) ...[
+                const SizedBox(height: 12),
+                Text(
+                  item.description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ]
+            ],
+          ),
         ),
       ),
     );
