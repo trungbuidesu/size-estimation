@@ -611,7 +611,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const CalibrationDisplayWidget(),
+                  CalibrationDisplayWidget(profile: _selectedProfile),
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     onPressed: () => context.push('/calibration-playground'),

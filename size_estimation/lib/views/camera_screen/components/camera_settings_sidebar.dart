@@ -308,16 +308,6 @@ class CameraSettingsSidebar extends StatelessWidget {
                                           }, onInfoTap: () {
                                             // TODO: Show info for Grid
                                           }),
-                                          if (applyUndistortion != null &&
-                                              onUndistortionChanged != null)
-                                            _buildResearcherSwitch(
-                                                context,
-                                                "Lens Undistortion",
-                                                applyUndistortion!, (v) {
-                                              onUndistortionChanged!(v);
-                                            }, onInfoTap: () {
-                                              // TODO: Show info for Undistortion
-                                            }),
                                           if (edgeSnapping != null &&
                                               onEdgeSnappingChanged != null)
                                             _buildResearcherSwitch(

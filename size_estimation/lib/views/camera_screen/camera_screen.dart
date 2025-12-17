@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +19,8 @@ import 'package:size_estimation/services/index.dart';
 import 'package:size_estimation/models/camera_metadata.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
 import 'package:size_estimation/views/measure_screen/ground_plane_measure_screen.dart';
+import 'package:size_estimation/views/measure_screen/planar_measure_screen.dart';
+import 'package:size_estimation/views/measure_screen/vertical_measure_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -67,11 +69,18 @@ class _CameraScreenState extends State<CameraScreen>
   bool _planarObjectMode = false; // Planar object measurement mode
   String? _referenceObject; // Reference object for scale (e.g., "A4 Paper")
   PlanarObjectMeasurement? _currentPlanarMeasurement;
+  List<vm.Vector2>? _planarCorners; // UI corners before scaling
   bool _isPlanarResultVisible = true;
+  double _planarDistanceMeters =
+      0.5; // Distance to planar object (default 50cm)
 
   // Vertical Object Measurement
   bool _verticalObjectMode = false;
   VerticalObjectMeasurement? _currentVerticalMeasurement;
+  vm.Vector2? _verticalTopPoint; // UI coordinates
+  vm.Vector2? _verticalBottomPoint; // UI coordinates
+  // Token to force reset selector on error
+  int _verticalSelectorResetToken = 0;
 
   // Advanced Processing
   bool _applyUndistortion = false;
@@ -322,7 +331,9 @@ class _CameraScreenState extends State<CameraScreen>
         missingPointsMsg = AppStrings.selectPointsGround;
       }
     } else if (_selectedModeType == EstimationModeType.planarObject) {
-      if (_currentPlanarMeasurement == null) {
+      // Allow capture even if measurement is null, so user can select on image
+      if (false) {
+        // _currentPlanarMeasurement == null
         measurementReady = false;
         missingPointsMsg = AppStrings.selectPointsPlanar;
       }
@@ -376,6 +387,16 @@ class _CameraScreenState extends State<CameraScreen>
         if (_currentKOut != null &&
             _currentOrientation != null &&
             _controller!.value.previewSize != null) {
+          // Get actual captured image size (async)
+          // We need to decode the image to get its real dimensions
+          final image = await decodeImageFromList(await file.readAsBytes());
+          final capturedImageSize = Size(
+            image.width.toDouble(),
+            image.height.toDouble(),
+          );
+
+          if (!mounted) return;
+
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -384,11 +405,88 @@ class _CameraScreenState extends State<CameraScreen>
                 kOut: _currentKOut!,
                 orientation: _currentOrientation!,
                 cameraHeightMeters: _cameraHeightMeters,
-                originalImageSize: _controller!.value.previewSize!,
+                originalImageSize:
+                    capturedImageSize, // ← FIXED: Use actual captured size
                 // Pass initial points from live preview
                 initialPointA: _groundPointA,
                 initialPointB: _groundPointB,
+                previewSize: Size(
+                  MediaQuery.of(context).size.width,
+                  MediaQuery.of(context).size.width * 4.0 / 3.0,
+                ),
+                kOutBaseSize: _controller!.value.previewSize,
+              ),
+            ),
+          );
+        } else {
+          _showError("Missing calibration data (K/IMU)");
+        }
+        return;
+      }
+
+      if (_planarObjectMode) {
+        setState(() {
+          _isCapturing = false;
+        });
+
+        if (_currentKOut != null && _controller!.value.previewSize != null) {
+          final image = await decodeImageFromList(await file.readAsBytes());
+          final capturedImageSize = Size(
+            image.width.toDouble(),
+            image.height.toDouble(),
+          );
+
+          if (!mounted) return;
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PlanarMeasureScreen(
+                imageFile: file,
+                kOut: _currentKOut!,
+                originalImageSize: capturedImageSize,
+                planarDistanceMeters: _planarDistanceMeters,
+                initialCorners: _planarCorners,
                 previewSize: _controller!.value.previewSize,
+                kOutBaseSize: _controller!.value.previewSize,
+              ),
+            ),
+          );
+        } else {
+          _showError("Missing calibration data (K)");
+        }
+        return;
+      }
+
+      if (_verticalObjectMode) {
+        setState(() {
+          _isCapturing = false;
+        });
+
+        if (_currentKOut != null &&
+            _currentOrientation != null &&
+            _controller!.value.previewSize != null) {
+          final image = await decodeImageFromList(await file.readAsBytes());
+          final capturedImageSize = Size(
+            image.width.toDouble(),
+            image.height.toDouble(),
+          );
+
+          if (!mounted) return;
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => VerticalMeasureScreen(
+                imageFile: file,
+                kOut: _currentKOut!,
+                orientation: _currentOrientation!,
+                cameraHeightMeters: _cameraHeightMeters,
+                originalImageSize: capturedImageSize,
+                initialTopPoint: _verticalTopPoint,
+                initialBottomPoint: _verticalBottomPoint,
+                previewSize: _controller!.value.previewSize,
+                kOutBaseSize: _controller!.value.previewSize,
               ),
             ),
           );
@@ -409,29 +507,6 @@ class _CameraScreenState extends State<CameraScreen>
           _maxZoom = _currentZoom;
         }
       });
-
-      if (_capturedImages.length >= _requiredImages) {
-        // If the last image has warnings, user requested to see the warning dialog FIRST,
-        // then the completion sheet only after closing it (OK).
-        // If it was already auto-shown above (via _hasShownAutoWarning), we might just wait for it?
-        // But _hasShownAutoWarning is async inside Future.delayed.
-        // Simplified Logic: If last image has warnings, FORCE show/wait for warning dialog.
-
-        if (warnings.isNotEmpty) {
-          await _showWarningDetails(warnings);
-        }
-
-        if (mounted) {
-          // Temporarily show the image detail directly
-          showDialog(
-            context: context,
-            builder: (context) => ImageDetailModal(
-              image: _capturedImages.last,
-              index: 0,
-            ),
-          );
-        }
-      }
     } catch (e) {
       _showError('${AppStrings.captureError}$e');
     } finally {
@@ -466,42 +541,6 @@ class _CameraScreenState extends State<CameraScreen>
     // Just REMOVED the fake "ISO > 400" warning as it was misleading.
 
     return warnings;
-  }
-
-  Future<void> _showWarningDetails(List<String> warnings) {
-    return CommonAlertDialog.show(
-      context: context,
-      title: AppStrings.qualityWarningTitle,
-      icon: Icons.warning_amber,
-      iconColor: Colors.orange,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: warnings
-            .map((w) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text("• $w",
-                    style: const TextStyle(color: Colors.white70))))
-            .toList(),
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(AppStrings.understood))
-      ],
-    );
-  }
-
-  Future<void> _showProcessDialog() async {
-    // Skip object detection and go straight to baseline input
-    if (!mounted) return;
-    _showBaselineDialog(null);
-  }
-
-  Future<void> _showBaselineDialog(List<dynamic>? _) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('TODO: Implement Capture Completion')),
-    );
   }
 
   // --- Controls & Toggles ---
@@ -569,23 +608,36 @@ class _CameraScreenState extends State<CameraScreen>
         break;
 
       case EstimationModeType.planarObject:
-        setState(() {
-          _selectedModeType = type; // Set selected mode
-          _groundPlaneMode = false;
-          _planarObjectMode = true;
-          _verticalObjectMode = false;
-          _currentPlanarMeasurement = null;
-        });
+        // Planar Object Mode - need distance to plane
+        final distance = await _showPlanarDistanceDialog();
+        if (distance != null) {
+          setState(() {
+            _selectedModeType = type; // Set selected mode
+            _planarDistanceMeters = distance;
+            _groundPlaneMode = false;
+            _planarObjectMode = true;
+            _verticalObjectMode = false;
+            _currentPlanarMeasurement = null;
+            _planarCorners = null;
+          });
+        }
         break;
 
       case EstimationModeType.singleView:
-        setState(() {
-          _selectedModeType = type; // Set selected mode
-          _groundPlaneMode = false;
-          _planarObjectMode = false;
-          _verticalObjectMode = true;
-          _currentVerticalMeasurement = null;
-        });
+        // Vertical Object Mode - need camera height
+        final height = await _showCameraHeightDialog();
+        if (height != null) {
+          setState(() {
+            _selectedModeType = type; // Set selected mode
+            _cameraHeightMeters = height;
+            _groundPlaneMode = false;
+            _planarObjectMode = false;
+            _verticalObjectMode = true;
+            _currentVerticalMeasurement = null;
+            _verticalTopPoint = null;
+            _verticalBottomPoint = null;
+          });
+        }
         break;
     }
   }
@@ -769,6 +821,54 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  Future<double?> _showPlanarDistanceDialog() async {
+    double tempDistance = _planarDistanceMeters;
+    return showDialog<double>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Khoảng cách đến mặt phẳng'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Nhập khoảng cách từ camera đến mặt phẳng chứa vật:'),
+              const SizedBox(height: 16),
+              Slider(
+                value: tempDistance,
+                min: 0.1,
+                max: 5.0,
+                divisions: 49,
+                label: '${tempDistance.toStringAsFixed(1)}m',
+                onChanged: (value) {
+                  setDialogState(() {
+                    tempDistance = value;
+                  });
+                },
+              ),
+              Text(
+                '${tempDistance.toStringAsFixed(1)} meters',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, tempDistance),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   vm.Vector2 _undistortPoint(vm.Vector2 point) {
     if (!_applyUndistortion ||
         _currentKOut == null ||
@@ -779,6 +879,30 @@ class _CameraScreenState extends State<CameraScreen>
       point: point,
       kMatrix: _currentKOut!,
       distCoeffs: _currentMetadata!.distortionCoefficients!,
+    );
+  }
+
+  /// Compute rotation matrix from Euler angles (ZYX convention)
+  /// R = Rz(yaw) * Ry(pitch) * Rx(roll)
+  vm.Matrix3 _computeRotationMatrix(double roll, double pitch, double yaw) {
+    final cr = math.cos(roll);
+    final sr = math.sin(roll);
+    final cp = math.cos(pitch);
+    final sp = math.sin(pitch);
+    final cy = math.cos(yaw);
+    final sy = math.sin(yaw);
+
+    // Rotation matrix (ZYX Euler)
+    return vm.Matrix3(
+      cy * cp,
+      cy * sp * sr - sy * cr,
+      cy * sp * cr + sy * sr,
+      sy * cp,
+      sy * sp * sr + cy * cr,
+      sy * sp * cr - cy * sr,
+      -sp,
+      cp * sr,
+      cp * cr,
     );
   }
 
@@ -802,9 +926,67 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    // Advanced Processing
-    final p1 = _undistortPoint(_snapPoint(pointA));
-    final p2 = _undistortPoint(_snapPoint(pointB));
+    // SCALING: UI Coordinates -> Buffer Coordinates
+    // The UI uses a fixed 3:4 aspect ratio container based on screen width
+    final uiWidth = MediaQuery.of(context).size.width;
+    final uiHeight = uiWidth * 4.0 / 3.0;
+
+    // Buffer size (the resolution of _latestImage and K matrix)
+    final bufferWidth =
+        _controller!.value.previewSize?.width.toDouble() ?? 1920.0;
+    final bufferHeight =
+        _controller!.value.previewSize?.height.toDouble() ?? 1080.0;
+
+    // Dynamic Scaling Logic for Rotation Support
+    final isUiPortrait = uiWidth < uiHeight;
+    final isSensorLandscape = bufferWidth > bufferHeight;
+    final needsSwap = isUiPortrait && isSensorLandscape;
+
+    double scale;
+    double yOffset;
+    double xOffset = 0;
+
+    if (needsSwap) {
+      // Portrait UI, Landscape Sensor (Rotated 90)
+      scale = bufferHeight / uiWidth;
+      final renderedHeight = uiWidth * (bufferWidth / bufferHeight);
+      yOffset = (renderedHeight - uiHeight) / 2;
+    } else {
+      // Landscape/Aligned
+      if ((bufferWidth / bufferHeight) > (uiWidth / uiHeight)) {
+        // Sensor Wider: Fits Height, Crops Width
+        scale = bufferHeight / uiHeight;
+        final renderedWidth = uiHeight * (bufferWidth / bufferHeight);
+        xOffset = (renderedWidth - uiWidth) / 2;
+        yOffset = 0;
+      } else {
+        scale = bufferWidth / uiWidth;
+        final renderedHeight = uiWidth / (bufferWidth / bufferHeight);
+        yOffset = (renderedHeight - uiHeight) / 2;
+      }
+    }
+
+    vm.Vector2 scalePoint(vm.Vector2 p) {
+      if (needsSwap) {
+        // SWAP X/Y for Portrait Mode
+        final x_sensor = (p.y + yOffset) * scale;
+        final y_sensor = p.x * scale;
+        return vm.Vector2(x_sensor, y_sensor);
+      } else {
+        // Normal Map for Landscape
+        final x_sensor = (p.x + xOffset) * scale;
+        final y_sensor = (p.y + yOffset) * scale;
+        return vm.Vector2(x_sensor, y_sensor);
+      }
+    }
+
+    // Advanced Processing (on Buffer Coordinates)
+    final p1 = _undistortPoint(_snapPoint(scalePoint(pointA)));
+    final p2 = _undistortPoint(_snapPoint(scalePoint(pointB)));
+
+    // Debug scaling
+    debugPrint(
+        "Ground Plane Scaling (Dynamic): Scale=${scale.toStringAsFixed(3)}, Offset=${yOffset.toStringAsFixed(1)}, Swap=$needsSwap");
 
     Future<GroundPlaneMeasurement?> measure() async {
       try {
@@ -923,17 +1105,85 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _performPlanarObjectMeasurement(List<vm.Vector2> corners) async {
+    // Save UI corners for later use
+    _planarCorners = List.from(corners);
     // Check if we have required data
     if (_currentKOut == null) {
       _showError('Camera intrinsics not available');
       return;
     }
 
-    // Advanced Processing (Snap/Undistort)
-    final refinedCorners =
-        corners.map((c) => _undistortPoint(_snapPoint(c))).toList();
+    // SCALING: UI Coordinates -> Buffer Coordinates (Matches Ground Plane Logic)
+    final uiWidth = MediaQuery.of(context).size.width;
+    final uiHeight = uiWidth * 4.0 / 3.0; // Aspect Ratio 3:4
 
-    // Validate corners
+    final bufferWidth =
+        _controller!.value.previewSize?.width.toDouble() ?? 1920.0;
+    final bufferHeight =
+        _controller!.value.previewSize?.height.toDouble() ?? 1080.0;
+
+    // Dynamic Scaling Logic for Rotation Support
+    // Check orientation match
+    final isUiPortrait = uiWidth < uiHeight;
+    final isSensorLandscape = bufferWidth > bufferHeight;
+    final needsSwap = isUiPortrait && isSensorLandscape;
+
+    double scale;
+    double yOffset;
+    double xOffset = 0;
+
+    if (needsSwap) {
+      // Portrait UI, Landscape Sensor (Rotated 90)
+      // Map UI Width (Short) to Sensor Height (Short)
+      scale = bufferHeight / uiWidth;
+      // Calculate vertical overflow (in UI coords)
+      final renderedHeight = uiWidth * (bufferWidth / bufferHeight);
+      yOffset = (renderedHeight - uiHeight) / 2;
+    } else {
+      // Landscape UI, Landscape Sensor (Normal)
+      // Map UI Width (Long) to Sensor Width (Long)
+      scale = bufferWidth / uiWidth;
+      // Calculate vertical overflow?
+      // If UI is 4:3 and Sensor 16:9.
+      // 16/9 = 1.77. 4/3 = 1.33.
+      // Video is wider. Fits height, crops width?
+      // Or if Cover: Fits Height (matches), Width overflows.
+      // Let's assume Cover behavior is consistent: fill smallest dimension.
+      if ((bufferWidth / bufferHeight) > (uiWidth / uiHeight)) {
+        // Sensor is wider than Screen. Fits Height. Crops Width.
+        scale = bufferHeight / uiHeight;
+        final renderedWidth = uiHeight * (bufferWidth / bufferHeight);
+        xOffset = (renderedWidth - uiWidth) / 2;
+        yOffset = 0;
+      } else {
+        // Sensor is taller/boxier? Unlikely for 16:9 sensor.
+        // Standard case: Matches Width.
+        scale = bufferWidth / uiWidth;
+        final renderedHeight = uiWidth / (bufferWidth / bufferHeight);
+        yOffset = (renderedHeight - uiHeight) / 2;
+      }
+    }
+
+    // Scale corners using Dynamic Logic
+    final scaledCorners = corners.map((c) {
+      if (needsSwap) {
+        // Swap X/Y
+        final x_sensor = (c.y + yOffset) * scale;
+        final y_sensor = c.x * scale;
+        return vm.Vector2(x_sensor, y_sensor);
+      } else {
+        // Standard Map
+        final x_sensor = (c.x + xOffset) * scale;
+        final y_sensor = (c.y + yOffset) * scale;
+        return vm.Vector2(x_sensor, y_sensor);
+      }
+    }).toList();
+
+    // Advanced Processing (Snap/Undistort) on Buffer Coordinates
+    final refinedCorners =
+        scaledCorners.map((c) => _undistortPoint(_snapPoint(c))).toList();
+
+    // Validate corners with refined points
     final service = PlanarObjectService();
     if (!service.isValidQuadrilateral(refinedCorners)) {
       _showError('Invalid quadrilateral. Please select corners in order.');
@@ -941,21 +1191,26 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     try {
+      // Reference objects are no longer needed since we use actual distance
       double? refWidth;
       double? refHeight;
-      if (_referenceObject != null) {
-        final refs = PlanarObjectService.getReferenceSizes();
-        if (refs.containsKey(_referenceObject)) {
-          refWidth = refs[_referenceObject]!['width'];
-          refHeight = refs[_referenceObject]!['height'];
-        }
-      }
+
+      // Debug camera intrinsics
+      debugPrint('=== CAMERA INTRINSICS ===');
+      debugPrint(
+          'K matrix: fx=${_currentKOut!.fx}, fy=${_currentKOut!.fy}, cx=${_currentKOut!.cx}, cy=${_currentKOut!.cy}');
+      debugPrint(
+          'Refined corners: ${refinedCorners.map((c) => '[${c.x.toStringAsFixed(1)},${c.y.toStringAsFixed(1)}]').join(', ')}');
+      debugPrint('Distance: ${_planarDistanceMeters}m');
+      debugPrint(
+          'Scale (Uniform): ${scale.toStringAsFixed(3)}, Y-Offset: ${yOffset.toStringAsFixed(1)}');
 
       Future<PlanarObjectMeasurement?> measure() async {
         try {
           return await service.measureObject(
             corners: refinedCorners,
-            kOut: _currentKOut!,
+            kOut: _currentKOut!, // Use original K matrix matching buffer
+            distanceMeters: _planarDistanceMeters,
             referenceWidthCm: refWidth,
             referenceHeightCm: refHeight,
           );
@@ -999,6 +1254,7 @@ class _CameraScreenState extends State<CameraScreen>
                 rectifiedCorners: last?.rectifiedCorners ?? refinedCorners,
                 aspectRatio: wStats.mean / hStats.mean,
                 estimatedError: hStats.stdDev,
+                distanceMeters: last?.distanceMeters ?? 0.5,
               );
               if (mounted)
                 setState(() {
@@ -1031,6 +1287,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _performVerticalObjectMeasurement(
       vm.Vector2 top, vm.Vector2 bottom) async {
+    // Save UI points for later use
+    _verticalTopPoint = top;
+    _verticalBottomPoint = bottom;
+
     // Check requirements
     if (_currentKOut == null) {
       _showError('Camera intrinsics not available');
@@ -1041,35 +1301,130 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
 
-    final p1 = _undistortPoint(_snapPoint(top));
-    final p2 = _undistortPoint(_snapPoint(bottom));
+    // SCALING: UI Coordinates -> Buffer Coordinates (Uniform Scaling)
+    final uiWidth = MediaQuery.of(context).size.width;
+    final uiHeight = uiWidth * 4.0 / 3.0; // Aspect Ratio 3:4
+
+    final bufferWidth =
+        _controller!.value.previewSize?.width.toDouble() ?? 1920.0;
+    final bufferHeight =
+        _controller!.value.previewSize?.height.toDouble() ?? 1080.0;
+
+    // Dynamic Scaling Logic for Rotation Support
+    final isUiPortrait = uiWidth < uiHeight;
+    final isSensorLandscape = bufferWidth > bufferHeight;
+    final needsSwap = isUiPortrait && isSensorLandscape;
+
+    double scale;
+    double yOffset;
+    double xOffset = 0;
+
+    if (needsSwap) {
+      // Portrait UI, Landscape Sensor (Rotated 90)
+      scale = bufferHeight / uiWidth;
+      final renderedHeight = uiWidth * (bufferWidth / bufferHeight);
+      yOffset = (renderedHeight - uiHeight) / 2;
+    } else {
+      // Landscape/Aligned
+      if ((bufferWidth / bufferHeight) > (uiWidth / uiHeight)) {
+        // Sensor Wider: Fits Height, Crops Width
+        scale = bufferHeight / uiHeight;
+        final renderedWidth = uiHeight * (bufferWidth / bufferHeight);
+        xOffset = (renderedWidth - uiWidth) / 2;
+        yOffset = 0;
+      } else {
+        scale = bufferWidth / uiWidth;
+        final renderedHeight = uiWidth / (bufferWidth / bufferHeight);
+        yOffset = (renderedHeight - uiHeight) / 2;
+      }
+    }
+
+    vm.Vector2 scalePoint(vm.Vector2 p) {
+      if (needsSwap) {
+        // SWAP X/Y for Portrait Mode
+        final x_sensor = (p.y + yOffset) * scale;
+        final y_sensor = p.x * scale;
+        return vm.Vector2(x_sensor, y_sensor);
+      } else {
+        // Normal Map for Landscape
+        final x_sensor = (p.x + xOffset) * scale;
+        final y_sensor = (p.y + yOffset) * scale;
+        return vm.Vector2(x_sensor, y_sensor);
+      }
+    }
+
+    // Apply scaling BEFORE snapping/undistorting
+    final p1 = _undistortPoint(_snapPoint(scalePoint(top)));
+    final p2 = _undistortPoint(_snapPoint(scalePoint(bottom)));
+
+    // Debug scaling
+    debugPrint(
+        "Vertical Meas Scaling (Swapped): Scale=${scale.toStringAsFixed(3)}, Offset=${yOffset.toStringAsFixed(1)}");
+    debugPrint("  Top UI: $top -> Buffer(Landscape): $p1");
+    debugPrint("  Bottom UI: $bottom -> Buffer(Landscape): $p2");
+
     final service = VerticalObjectService();
 
     // Vanishing Point Refinement (Advanced Module C)
+    IMUOrientation refinedOrientation = _currentOrientation!;
+
     if (_latestImage != null) {
       final vp =
           _vanishingPointService.estimateVerticalVanishingPoint(_latestImage!);
-      if (vp != null) {
-        // We found a Vertical VP. In a perfect world, for portrait,
-        // VP(x) approx cx, and VP(y) relates to pitch.
-        // This implies we could refine _currentOrientation.
-        // For now, we just log it as "Refined Orientation available".
-        debugPrint("Vertical VP found at $vp. Could refine pitch.");
+      if (vp != null && _currentKOut != null) {
+        // Vanishing point detected! Use it to refine pitch angle
+        // For vertical lines, VP should be at infinity in the vertical direction
+        // VP position in image tells us about camera pitch
+
+        // Convert VP to normalized coordinates
+        final vp_norm_x = (vp.x - _currentKOut!.cx) / _currentKOut!.fx;
+        final vp_norm_y = (vp.y - _currentKOut!.cy) / _currentKOut!.fy;
+
+        // For a perfectly level camera looking at vertical lines:
+        // VP should be at (0, ±∞) in normalized coords
+        // The Y position of VP relates to pitch angle
+
+        // Estimate pitch from VP
+        // If VP is above center (vp_norm_y < 0), camera is tilted down
+        // If VP is below center (vp_norm_y > 0), camera is tilted up
+        final pitchFromVP = math.atan2(vp_norm_y, 1.0);
+
+        // Blend VP-based pitch with IMU pitch
+        // VP is more accurate for vertical lines, but can be noisy
+        // Use weighted average: 70% IMU, 30% VP
+        final imuPitch = _currentOrientation!.pitch;
+        final blendedPitch = imuPitch * 0.7 + pitchFromVP * 0.3;
+
+        // Create refined orientation
+        refinedOrientation = IMUOrientation(
+          rotationMatrix: _computeRotationMatrix(
+            blendedPitch,
+            _currentOrientation!.roll,
+            _currentOrientation!.yaw,
+          ),
+          pitch: blendedPitch,
+          roll: _currentOrientation!.roll,
+          yaw: _currentOrientation!.yaw,
+          gravity: _currentOrientation!.gravity,
+        );
+
+        debugPrint("VP Refinement: IMU pitch=${imuPitch.toStringAsFixed(3)}, "
+            "VP pitch=${pitchFromVP.toStringAsFixed(3)}, "
+            "Blended=${blendedPitch.toStringAsFixed(3)}");
       }
     }
 
     Future<VerticalObjectMeasurement?> measure() async {
-      try {
-        return await service.measureHeight(
-          topPixel: p1,
-          bottomPixel: p2,
-          kOut: _currentKOut!,
-          orientation: _currentOrientation!,
-          cameraHeightMeters: _cameraHeightMeters,
-        );
-      } catch (e) {
-        return null;
-      }
+      debugPrint("Measuring vertical object: top=$p1, bottom=$p2");
+      final result = await service.measureHeight(
+        topPixel: p1,
+        bottomPixel: p2,
+        kOut: _currentKOut!,
+        orientation: refinedOrientation, // Use refined orientation!
+        cameraHeightMeters: _cameraHeightMeters,
+      );
+      debugPrint("Measurement result: ${result.heightCm} cm");
+      return result;
     }
 
     try {
@@ -1159,8 +1514,16 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
     } catch (e) {
-      _showError('Measurement failed: $e');
+      if (e.toString().contains("does not intersect")) {
+        _showError('Điểm đáy không chạm mặt đất. Hãy chọn điểm thấp hơn.');
+      } else {
+        _showError('Đo thất bại: ${e.toString().split("\n").first}');
+      }
       debugPrint('Vertical object measurement error: $e');
+      // Reset Selector to clear "Processing..." state
+      setState(() {
+        _verticalSelectorResetToken++;
+      });
     }
   }
 
@@ -1213,6 +1576,44 @@ class _CameraScreenState extends State<CameraScreen>
                             _currentMeasurement = null;
                             _groundPointA = null;
                             _groundPointB = null;
+                          });
+                        }
+                      },
+                      tooltip:
+                          "Đặt chiều cao camera: ${_cameraHeightMeters.toStringAsFixed(1)}m",
+                    ),
+                  // Distance Button (Planar Mode)
+                  if (_planarObjectMode)
+                    IconButton(
+                      icon: const Icon(Icons.social_distance,
+                          color: Colors.purple),
+                      onPressed: () async {
+                        final distance = await _showPlanarDistanceDialog();
+                        if (distance != null) {
+                          setState(() {
+                            _planarDistanceMeters = distance;
+                            // Reset measurements when distance changes
+                            _currentPlanarMeasurement = null;
+                            _planarCorners = null;
+                          });
+                        }
+                      },
+                      tooltip:
+                          "Đặt khoảng cách: ${_planarDistanceMeters.toStringAsFixed(1)}m",
+                    ),
+                  // Camera Height Button (Vertical Mode)
+                  if (_verticalObjectMode)
+                    IconButton(
+                      icon: const Icon(Icons.height, color: Colors.orange),
+                      onPressed: () async {
+                        final height = await _showCameraHeightDialog();
+                        if (height != null) {
+                          setState(() {
+                            _cameraHeightMeters = height;
+                            // Reset measurements when height changes
+                            _currentVerticalMeasurement = null;
+                            _verticalTopPoint = null;
+                            _verticalBottomPoint = null;
                           });
                         }
                       },
@@ -1409,9 +1810,6 @@ class _CameraScreenState extends State<CameraScreen>
                     ),
                     measurement: _currentPlanarMeasurement,
                     referenceObject: _referenceObject,
-                    showResult: _isPlanarResultVisible,
-                    onCloseResult: () =>
-                        setState(() => _isPlanarResultVisible = false),
                     onCornersSelected: (corners) {
                       _performPlanarObjectMeasurement(corners);
                     },
@@ -1435,6 +1833,7 @@ class _CameraScreenState extends State<CameraScreen>
                 child: AspectRatio(
                   aspectRatio: aspectRatio,
                   child: VerticalObjectSelector(
+                    key: ValueKey(_verticalSelectorResetToken),
                     imageSize: Size(
                       _controller!.value.previewSize?.width.toDouble() ?? 1920,
                       _controller!.value.previewSize?.height.toDouble() ?? 1080,
@@ -1548,74 +1947,61 @@ class _CameraScreenState extends State<CameraScreen>
                         final isCaptureDisabled =
                             modeMissing || measurementMissing;
 
-                        return GestureDetector(
-                          onTap: () {
-                            if (_multiFrameMode && _isMeasuringMultiFrame) {
-                              _multiFrameTimer?.cancel();
-                              setState(() => _isMeasuringMultiFrame = false);
-                            } else {
-                              _captureImage(); // Handles both single and multi-frame start
-                            }
-                          },
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Container(
-                                width: 80,
-                                height: 80,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: isCaptureDisabled
-                                          ? Colors.grey
-                                          : Colors.white,
-                                      width: 4),
-                                ),
-                                child: Container(
-                                  margin: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: isCaptureDisabled
-                                        ? Colors.transparent
-                                        : Colors.white,
-                                  ),
-                                ),
-                              ),
-                              if (isCaptureDisabled)
-                                const Icon(Icons.block,
-                                    color: Colors.grey, size: 40),
-                              if (_isCapturing)
-                                const SizedBox(
+                        return IgnorePointer(
+                          ignoring: isCaptureDisabled,
+                          child: GestureDetector(
+                            onTap: () {
+                              if (_multiFrameMode && _isMeasuringMultiFrame) {
+                                _multiFrameTimer?.cancel();
+                                setState(() => _isMeasuringMultiFrame = false);
+                              } else {
+                                _captureImage(); // Handles both single and multi-frame start
+                              }
+                            },
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Container(
                                   width: 80,
                                   height: 80,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.redAccent,
-                                    strokeWidth: 4,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: isCaptureDisabled
+                                            ? Colors.grey
+                                            : Colors.white,
+                                        width: 4),
+                                  ),
+                                  child: Container(
+                                    margin: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: isCaptureDisabled
+                                          ? Colors.transparent
+                                          : Colors.white,
+                                    ),
                                   ),
                                 ),
-                            ],
+                                if (isCaptureDisabled)
+                                  const Icon(Icons.block,
+                                      color: Colors.grey, size: 40),
+                                if (_isCapturing)
+                                  const SizedBox(
+                                    width: 80,
+                                    height: 80,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.redAccent,
+                                      strokeWidth: 4,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         );
                       }),
 
-                      // Complete Button (Right Side)
-                      if (_capturedImages.length >= _requiredImages)
-                        GestureDetector(
-                          onTap: _showProcessDialog,
-                          child: Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Theme.of(context).primaryColor,
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: const Icon(Icons.check,
-                                color: Colors.white, size: 32),
-                          ),
-                        )
-                      else
-                        const SizedBox(width: 56),
+                      // Complete Button (Right Side) REMOVED
+                      const SizedBox(width: 56),
                     ],
                   ),
                   const SizedBox(height: 16),

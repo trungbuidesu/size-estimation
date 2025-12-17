@@ -17,12 +17,8 @@ class PlanarObjectSelector extends StatefulWidget {
     this.measurement,
     this.onClear,
     this.referenceObject,
-    this.showResult = true,
-    this.onCloseResult,
+    // Removed showResult and onCloseResult as per requirement
   });
-
-  final bool showResult;
-  final VoidCallback? onCloseResult;
 
   @override
   State<PlanarObjectSelector> createState() => _PlanarObjectSelectorState();
@@ -30,10 +26,12 @@ class PlanarObjectSelector extends StatefulWidget {
 
 class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
   final List<vm.Vector2> _corners = [];
-  Offset _resultPosition = const Offset(20, 120); // Default top position
 
   @override
   Widget build(BuildContext context) {
+    // If measurement points are passed from parent (e.g. from state), sync them if local is empty
+    // But typically this widget drives the selection.
+
     return Stack(
       children: [
         // Touch area for corner selection
@@ -63,7 +61,8 @@ class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
-                painter: _CornersPainter(corners: _corners),
+                painter: _CornersPainter(
+                    corners: _corners, measurement: widget.measurement),
               ),
             ),
           ),
@@ -123,103 +122,7 @@ class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
             ),
           ),
 
-        if (widget.measurement != null && widget.showResult)
-          Positioned(
-            top: _resultPosition.dy,
-            left: _resultPosition.dx,
-            child: GestureDetector(
-              onPanUpdate: (details) {
-                setState(() {
-                  _resultPosition += details.delta;
-                });
-              },
-              child: Container(
-                width: 300, // Fixed width for consistent look
-                margin: const EdgeInsets.symmetric(horizontal: 0),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.purple, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.purple.withOpacity(0.3),
-                      blurRadius: 12,
-                      spreadRadius: 2,
-                    )
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Header with Close Button
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Planar Object Dimensions',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: widget.onCloseResult,
-                          child: const Padding(
-                            padding: EdgeInsets.all(4.0),
-                            child: Icon(Icons.close,
-                                color: Colors.white70, size: 18),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(color: Colors.white24, height: 12),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildDimensionChip(
-                          'Width',
-                          '${widget.measurement!.widthCm.toStringAsFixed(1)} cm',
-                          Colors.blue,
-                        ),
-                        _buildDimensionChip(
-                          'Height',
-                          '${widget.measurement!.heightCm.toStringAsFixed(1)} cm',
-                          Colors.green,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildDimensionChip(
-                          'Area',
-                          '${widget.measurement!.areaCm2.toStringAsFixed(1)} cm²',
-                          Colors.orange,
-                        ),
-                        _buildDimensionChip(
-                          'Ratio',
-                          widget.measurement!.aspectRatio.toStringAsFixed(2),
-                          Colors.purple,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '± ${widget.measurement!.estimatedError.toStringAsFixed(1)} cm',
-                      style: const TextStyle(
-                        color: Colors.orange,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+        // Removed the Floating Result Overlay here.
 
         // Clear button
         if (_corners.isNotEmpty)
@@ -252,48 +155,19 @@ class _PlanarObjectSelectorState extends State<PlanarObjectSelector> {
         return 'Tap bottom-right corner';
       case 3:
         return 'Tap bottom-left corner';
+      case 4:
+        return 'Done. Dimensions shown on edges.';
       default:
         return 'Processing...';
     }
-  }
-
-  Widget _buildDimensionChip(String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color, width: 1),
-      ),
-      child: Column(
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
 class _CornersPainter extends CustomPainter {
   final List<vm.Vector2> corners;
+  final PlanarObjectMeasurement? measurement;
 
-  _CornersPainter({required this.corners});
+  _CornersPainter({required this.corners, this.measurement});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -370,10 +244,63 @@ class _CornersPainter extends CustomPainter {
         ),
       );
     }
+
+    // Draw Measurement Text on Edges/Services (New Logic)
+    if (measurement != null && corners.length == 4) {
+      final p0 = Offset(corners[0].x, corners[0].y);
+      final p1 = Offset(corners[1].x, corners[1].y);
+      final p2 = Offset(corners[2].x, corners[2].y);
+      final p3 = Offset(corners[3].x, corners[3].y);
+
+      // Top (0-1)
+      _drawLabel(canvas, (p0 + p1) / 2,
+          "${measurement!.widthCm.toStringAsFixed(1)} cm", Colors.blue);
+
+      // Bottom (2-3)
+      _drawLabel(canvas, (p2 + p3) / 2,
+          "${measurement!.widthCm.toStringAsFixed(1)} cm", Colors.blue);
+
+      // Right (1-2)
+      _drawLabel(canvas, (p1 + p2) / 2,
+          "${measurement!.heightCm.toStringAsFixed(1)} cm", Colors.green);
+
+      // Left (3-0)
+      _drawLabel(canvas, (p3 + p0) / 2,
+          "${measurement!.heightCm.toStringAsFixed(1)} cm", Colors.green);
+
+      // Area + Distance (Center)
+      // Approximate center
+      final center = (p0 + p2) / 2;
+      _drawLabel(
+          canvas,
+          center,
+          "Area: ${measurement!.areaCm2.toStringAsFixed(0)} cm²\nDistance: ${measurement!.distanceMeters.toStringAsFixed(2)} m\n± ${measurement!.estimatedError.toStringAsFixed(1)} cm",
+          Colors.orange,
+          fontSize: 16);
+    }
+  }
+
+  void _drawLabel(Canvas canvas, Offset position, String text, Color color,
+      {double fontSize = 14}) {
+    final textSpan = TextSpan(
+      text: text,
+      style: TextStyle(
+          color: Colors.white,
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          backgroundColor: Colors.black45),
+    );
+    final tp = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center);
+    tp.layout();
+    tp.paint(canvas, position - Offset(tp.width / 2, tp.height / 2));
   }
 
   @override
   bool shouldRepaint(_CornersPainter oldDelegate) {
-    return oldDelegate.corners.length != corners.length;
+    return oldDelegate.corners.length != corners.length ||
+        oldDelegate.measurement != measurement;
   }
 }

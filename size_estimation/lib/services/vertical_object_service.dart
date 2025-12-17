@@ -63,44 +63,71 @@ class VerticalObjectService {
     }
 
     final lambdaBottom = -cameraCenter.z / rayBottomWorld.z;
-    if (lambdaBottom < 0) {
-      throw Exception('Bottom point is behind camera or above horizon');
+
+    // Check if intersection is valid
+    // Lambda must be positive (in front of camera)
+    // AND ray must point downward (rayBottomWorld.z < 0) to hit ground
+    if (lambdaBottom < 0 || rayBottomWorld.z > 0) {
+      throw Exception('Bottom point does not intersect ground. '
+          'Make sure to select the base of the object on the ground. '
+          'Ray Z=${rayBottomWorld.z.toStringAsFixed(3)}, lambda=$lambdaBottom');
     }
 
     final pBottom = cameraCenter + rayBottomWorld * lambdaBottom;
 
     // 4. Calculate Height using Top Ray
-    // We assume Top Point has same (X, Y) as Bottom Point
-    // We construct a vertical line at (pBottom.x, pBottom.y)
-    // Example: P_top = (pBottom.x, pBottom.y, Z_top)
-    // This P_top must likely lie on the Top Ray (or closest to it)
+    // We need to find where the top ray intersects the vertical line through pBottom
+    // Vertical line: (pBottom.x, pBottom.y, Z) for any Z
+    // Top ray: P = cameraCenter + lambda * rayTopWorld
 
-    // Geometric approach:
-    // Planar distance to object (radius in XY plane)
-    final planarDistance =
-        math.sqrt(pBottom.x * pBottom.x + pBottom.y * pBottom.y);
+    // For the intersection:
+    // cameraCenter.x + lambda * rayTopWorld.x = pBottom.x
+    // cameraCenter.y + lambda * rayTopWorld.y = pBottom.y
 
-    // Planar properties of Top Ray
-    final topRayPlanarProjection = math
-        .sqrt(rayTopWorld.x * rayTopWorld.x + rayTopWorld.y * rayTopWorld.y);
+    // We can solve for lambda using either equation (they should give same result)
+    // Using X: lambda = (pBottom.x - cameraCenter.x) / rayTopWorld.x
+    // Using Y: lambda = (pBottom.y - cameraCenter.y) / rayTopWorld.y
 
-    if (topRayPlanarProjection < 1e-6) {
-      // Top ray is looking straight up/down
-      throw Exception('Top ray is vertical singularity');
+    // Choose the equation with larger denominator for numerical stability
+    double lambdaTop;
+    if (rayTopWorld.x.abs() > rayTopWorld.y.abs()) {
+      if (rayTopWorld.x.abs() < 1e-6) {
+        throw Exception(
+            'Top ray does not intersect vertical line (parallel in X)');
+      }
+      lambdaTop = (pBottom.x - cameraCenter.x) / rayTopWorld.x;
+    } else {
+      if (rayTopWorld.y.abs() < 1e-6) {
+        throw Exception(
+            'Top ray does not intersect vertical line (parallel in Y)');
+      }
+      lambdaTop = (pBottom.y - cameraCenter.y) / rayTopWorld.y;
     }
 
-    // Find lambda for top ray such that planar distance matches
-    // lambda * topRayPlanarProjection = planarDistance
-    final lambdaTop = planarDistance / topRayPlanarProjection;
+    // Check if intersection is in front of camera
+    if (lambdaTop < 0) {
+      throw Exception('Top point is behind camera');
+    }
 
     final pTop = cameraCenter + rayTopWorld * lambdaTop;
 
     // Object Height is the Z coordinate of pTop
-    // (Since ground is Z=0)
+    // (Since ground is Z=0 and pBottom is on ground)
     final heightMeters = pTop.z;
+
+    // Sanity check: height should be positive
+    if (heightMeters < 0) {
+      throw Exception(
+          'Invalid height calculation (negative height). Check point selection.');
+    }
+
     final heightCm = heightMeters * 100;
 
     // 5. Error Estimation
+    // Use actual planar distance for error calculation
+    final planarDistance =
+        math.sqrt(pBottom.x * pBottom.x + pBottom.y * pBottom.y);
+
     final error = _estimateError(
       heightCm: heightCm,
       distanceMeters: planarDistance,

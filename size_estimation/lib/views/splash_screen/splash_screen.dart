@@ -21,6 +21,9 @@ class _SplashScreenState extends State<SplashScreen> {
     // ⏳ Chờ 3 giây để người dùng xem Splash Screen
     await Future.delayed(const Duration(seconds: 3));
 
+    // Get the list of required permissions based on platform
+    final requiredPermissions = await getRequiredPermissions();
+
     bool allGranted = true;
     for (var item in requiredPermissions) {
       if (!await item.permission.isGranted) {

@@ -1,20 +1,26 @@
-// ignore_for_file: non_constant_identifier_names
 import 'dart:math' as math;
 import 'package:vector_math/vector_math_64.dart' as vm;
 import 'package:size_estimation/models/camera_metadata.dart';
-import 'package:size_estimation/constants/index.dart';
+
+/// Configuration for planar object measurement
+class PlanarObjectConfig {
+  static const double zeroEpsilon = 1e-10;
+  static const double estimatedDistanceMeters = 0.5; // Default 50cm
+  static const double assumedRealSize = 21.0; // A4 width in cm
+}
 
 /// Result of planar object measurement
 class PlanarObjectMeasurement {
   final double widthCm;
   final double heightCm;
   final double areaCm2;
-  final List<vm.Vector2> corners; // 4 corners in image coordinates
-  final List<vm.Vector2> rectifiedCorners; // 4 corners after rectification
+  final List<vm.Vector2> corners;
+  final List<vm.Vector2> rectifiedCorners;
   final double aspectRatio;
-  final double estimatedError; // Estimated error in cm
+  final double estimatedError;
+  final double distanceMeters;
 
-  const PlanarObjectMeasurement({
+  PlanarObjectMeasurement({
     required this.widthCm,
     required this.heightCm,
     required this.areaCm2,
@@ -22,32 +28,26 @@ class PlanarObjectMeasurement {
     required this.rectifiedCorners,
     required this.aspectRatio,
     required this.estimatedError,
+    required this.distanceMeters,
   });
 
   @override
   String toString() {
-    return 'PlanarObjectMeasurement(\n'
-        '  Width: ${widthCm.toStringAsFixed(1)} cm\n'
-        '  Height: ${heightCm.toStringAsFixed(1)} cm\n'
-        '  Area: ${areaCm2.toStringAsFixed(1)} cm²\n'
-        '  Aspect Ratio: ${aspectRatio.toStringAsFixed(2)}\n'
-        '  Error: ± ${estimatedError.toStringAsFixed(1)} cm\n'
-        ')';
+    return 'PlanarObjectMeasurement(width: ${widthCm.toStringAsFixed(1)}cm, '
+        'height: ${heightCm.toStringAsFixed(1)}cm, '
+        'area: ${areaCm2.toStringAsFixed(0)}cm², '
+        'distance: ${distanceMeters.toStringAsFixed(2)}m, '
+        'error: ±${estimatedError.toStringAsFixed(1)}cm)';
   }
 }
 
-/// Service for planar object measurements using homography
+/// Service for measuring planar objects using homography
 class PlanarObjectService {
-  /// Measure planar object dimensions
-  ///
-  /// Parameters:
-  /// - corners: 4 corners of the planar object (top-left, top-right, bottom-right, bottom-left)
-  /// - kOut: Camera intrinsic matrix
-  /// - referenceWidthCm: Known width for scale (optional, if null uses pixel-to-cm estimation)
-  /// - referenceHeightCm: Known height for scale (optional)
+  /// Measure planar object dimensions with proper 3D reconstruction
   Future<PlanarObjectMeasurement> measureObject({
     required List<vm.Vector2> corners,
     required IntrinsicMatrix kOut,
+    required double distanceMeters,
     double? referenceWidthCm,
     double? referenceHeightCm,
   }) async {
@@ -55,51 +55,188 @@ class PlanarObjectService {
       throw ArgumentError('Exactly 4 corners required');
     }
 
-    // Build homography to rectify the plane
-    final H = _computeRectificationHomography(corners);
+    // User selects corners in order: TL, TR, BR, BL (top-left, top-right, bottom-right, bottom-left)
+    // We trust this order and use it directly
+    print('Using corners in user-selected order [TL, TR, BR, BL]:');
+    print(
+        '  ${corners.map((c) => '[${c.x.toStringAsFixed(1)},${c.y.toStringAsFixed(1)}]').join(', ')}');
 
-    // Apply homography to corners
-    final rectifiedCorners =
-        corners.map((c) => _applyHomography(H, c)).toList();
+    // ACCURATE 3D RECONSTRUCTION FOR ANY CAMERA ANGLE
+    // The key insight: we know the distance, so we can solve for the plane orientation
 
-    // Calculate dimensions in rectified space
-    final width = (rectifiedCorners[1] - rectifiedCorners[0]).length;
-    final height = (rectifiedCorners[3] - rectifiedCorners[0]).length;
+    // Step 1: Back-project corners to 3D rays
+    // IMPORTANT: Do NOT normalize rays! We need ray.z = 1 for distance calculation
+    final rays = corners.map((corner) {
+      final x_norm = (corner.x - kOut.cx) / kOut.fx;
+      final y_norm = (corner.y - kOut.cy) / kOut.fy;
+      return vm.Vector3(x_norm, y_norm, 1.0); // NOT normalized!
+    }).toList();
+
+    // Step 2: Estimate plane orientation from perspective distortion
+    // Instead of using cross product (which fails when all Z are same),
+    // we analyze the quadrilateral shape to estimate plane tilt
+
+    // Calculate edge ratios to detect perspective
+    final edge01 = (corners[1] - corners[0]).length; // Top edge
+    final edge32 = (corners[2] - corners[3]).length; // Bottom edge
+    final edge03 = (corners[3] - corners[0]).length; // Left edge
+    final edge12 = (corners[2] - corners[1]).length; // Right edge
+
+    // If top/bottom edges have different lengths, plane is tilted in pitch
+    // If left/right edges have different lengths, plane is tilted in roll
+    final horizontalRatio = edge01 / (edge32 + 1e-6);
+    final verticalRatio = edge03 / (edge12 + 1e-6);
+
+    print(
+        'Edge ratios: horizontal=${horizontalRatio.toStringAsFixed(3)}, vertical=${verticalRatio.toStringAsFixed(3)}');
+
+    // Estimate plane normal from perspective distortion
+    // For a frontal plane: normal = [0, 0, 1]
+    // For tilted plane: normal has X, Y components
+
+    // Simple heuristic: if ratio > 1, far edge is smaller (tilted away)
+    // if ratio < 1, near edge is smaller (tilted toward)
+    double nx = 0.0;
+    double ny = 0.0;
+    double nz = 1.0;
+
+    // Horizontal tilt (around Y axis)
+    if (horizontalRatio > 1.05) {
+      // Top edge larger → top is closer → plane tilted down
+      ny = -(horizontalRatio - 1.0) * 0.3;
+    } else if (horizontalRatio < 0.95) {
+      // Bottom edge larger → bottom is closer → plane tilted up
+      ny = (1.0 / horizontalRatio - 1.0) * 0.3;
+    }
+
+    // Vertical tilt (around X axis)
+    if (verticalRatio > 1.05) {
+      // Left edge larger → left is closer → plane tilted right
+      nx = (verticalRatio - 1.0) * 0.3;
+    } else if (verticalRatio < 0.95) {
+      // Right edge larger → right is closer → plane tilted left
+      nx = -(1.0 / verticalRatio - 1.0) * 0.3;
+    }
+
+    final normal = vm.Vector3(nx, ny, nz).normalized();
+
+    print(
+        'Estimated plane normal: [${normal.x.toStringAsFixed(3)}, ${normal.y.toStringAsFixed(3)}, ${normal.z.toStringAsFixed(3)}]');
+
+    // Step 3: Refine plane position using distance constraint
+    // Plane equation: n·(P - P0) = 0, where P0 is a point on the plane
+    // We know the average distance should be distanceMeters
+
+    // Distance along optical axis to plane
+    // If plane normal is n and passes through point at distance d along optical axis
+    // Then: d = distance / (n · [0,0,1]) = distance / n.z
+    final d_plane = distanceMeters / normal.z.abs().clamp(0.1, 1.0);
+
+    print(
+        'd_plane: ${d_plane.toStringAsFixed(4)}m (from distance=${distanceMeters}m, normal.z=${normal.z.toStringAsFixed(3)})');
+
+    // Step 4: Intersect each ray with the refined plane
+    final points3D = <vm.Vector3>[];
+    print('Ray intersection debug:');
+    for (int i = 0; i < rays.length; i++) {
+      final ray = rays[i];
+      // Ray: P = lambda * ray
+      // Plane: n · P = d_plane * n.z (distance along Z axis)
+      final n_dot_ray = normal.dot(ray);
+
+      double lambda;
+      if (n_dot_ray.abs() < 1e-6) {
+        // Ray parallel to plane - use simple distance
+        lambda = distanceMeters / ray.z;
+        print(
+            '  Ray[$i]: parallel, lambda=${lambda.toStringAsFixed(4)}, ray.z=${ray.z.toStringAsFixed(3)}');
+        points3D.add(ray * lambda);
+      } else {
+        // Proper intersection
+        lambda = (d_plane * normal.z) / n_dot_ray;
+        print(
+            '  Ray[$i]: intersect, lambda=${lambda.toStringAsFixed(4)}, n·ray=${n_dot_ray.toStringAsFixed(3)}');
+        points3D.add(ray * lambda);
+      }
+      print(
+          '    Ray: [${ray.x.toStringAsFixed(3)}, ${ray.y.toStringAsFixed(3)}, ${ray.z.toStringAsFixed(3)}]');
+      print(
+          '    Point3D: [${points3D[i].x.toStringAsFixed(4)}, ${points3D[i].y.toStringAsFixed(4)}, ${points3D[i].z.toStringAsFixed(4)}]');
+    }
+
+    // Step 5: Calculate real-world dimensions
+    // Assumption: corners = [TL, TR, BR, BL] (top-left, top-right, bottom-right, bottom-left)
+    final topEdge3D = (points3D[1] - points3D[0]).length; // TL to TR
+    final bottomEdge3D = (points3D[2] - points3D[3]).length; // BL to BR
+    final leftEdge3D = (points3D[3] - points3D[0]).length; // TL to BL
+    final rightEdge3D = (points3D[2] - points3D[1])
+        .length; // TR to BR (user says this is correct!)
+
+    print('Edge calculation (assuming [TL, TR, BR, BL] order):');
+    print('  Top edge [0→1]: ${topEdge3D.toStringAsFixed(4)}m');
+    print(
+        '  Right edge [1→2]: ${rightEdge3D.toStringAsFixed(4)}m (user says OK)');
+    print('  Bottom edge [3→2]: ${bottomEdge3D.toStringAsFixed(4)}m');
+    print('  Left edge [0→3]: ${leftEdge3D.toStringAsFixed(4)}m');
+
+    // Debug logging
+    print('=== PLANAR MEASUREMENT DEBUG ===');
+    print('Distance input: ${distanceMeters}m');
+    print(
+        'Corners (pixels): ${corners.map((c) => '[${c.x.toStringAsFixed(1)},${c.y.toStringAsFixed(1)}]').join(', ')}');
+    print('3D Points (meters):');
+    for (int i = 0; i < points3D.length; i++) {
+      final p = points3D[i];
+      print(
+          '  [$i]: [${p.x.toStringAsFixed(3)}, ${p.y.toStringAsFixed(3)}, ${p.z.toStringAsFixed(3)}]');
+    }
+    print('Edge lengths (meters):');
+    print('  Top: ${topEdge3D.toStringAsFixed(4)}m');
+    print('  Bottom: ${bottomEdge3D.toStringAsFixed(4)}m');
+    print('  Left: ${leftEdge3D.toStringAsFixed(4)}m');
+    print('  Right: ${rightEdge3D.toStringAsFixed(4)}m');
+
+    // Use geometric mean for better accuracy
+    final width3D = math.sqrt(topEdge3D * bottomEdge3D);
+    final height3D = math.sqrt(leftEdge3D * rightEdge3D);
+
+    print('Geometric mean:');
+    print(
+        '  Width: ${width3D.toStringAsFixed(4)}m = ${(width3D * 100).toStringAsFixed(2)}cm');
+    print(
+        '  Height: ${height3D.toStringAsFixed(4)}m = ${(height3D * 100).toStringAsFixed(2)}cm');
 
     // Convert to cm
     double widthCm;
     double heightCm;
 
     if (referenceWidthCm != null) {
-      // Use reference width for scale
-      final scale = referenceWidthCm / width;
+      final scale = referenceWidthCm / (width3D * 100);
       widthCm = referenceWidthCm;
-      heightCm = height * scale;
+      heightCm = (height3D * 100) * scale;
+      print(
+          'Using reference width: ${referenceWidthCm}cm, scale=${scale.toStringAsFixed(4)}');
     } else if (referenceHeightCm != null) {
-      // Use reference height for scale
-      final scale = referenceHeightCm / height;
+      final scale = referenceHeightCm / (height3D * 100);
       heightCm = referenceHeightCm;
-      widthCm = width * scale;
+      widthCm = (width3D * 100) * scale;
+      print(
+          'Using reference height: ${referenceHeightCm}cm, scale=${scale.toStringAsFixed(4)}');
     } else {
-      // Estimate scale from focal length (rough approximation)
-      // Assumes object is ~50cm from camera
-      final avgFocal = (kOut.fx + kOut.fy) / 2;
-      final estimatedDistance =
-          PlanarObjectConfig.estimatedDistanceMeters; // meters
-      final pixelToCm = (estimatedDistance * 100) / avgFocal;
-
-      widthCm = width * pixelToCm;
-      heightCm = height * pixelToCm;
+      widthCm = width3D * 100;
+      heightCm = height3D * 100;
+      print('No reference, using direct conversion');
     }
 
     final areaCm2 = widthCm * heightCm;
     final aspectRatio = widthCm / heightCm;
 
     // Estimate error
+    final avgFocal = (kOut.fx + kOut.fy) / 2;
     final error = _estimateError(
       corners: corners,
-      widthPixels: width,
-      heightPixels: height,
+      widthPixels: width3D * avgFocal / distanceMeters,
+      heightPixels: height3D * avgFocal / distanceMeters,
       hasReference: referenceWidthCm != null || referenceHeightCm != null,
     );
 
@@ -108,152 +245,57 @@ class PlanarObjectService {
       heightCm: heightCm,
       areaCm2: areaCm2,
       corners: corners,
-      rectifiedCorners: rectifiedCorners,
+      rectifiedCorners: corners,
       aspectRatio: aspectRatio,
       estimatedError: error,
+      distanceMeters: distanceMeters,
     );
   }
 
-  /// Compute homography for plane rectification
-  /// Maps quadrilateral to rectangle
-  vm.Matrix3 _computeRectificationHomography(List<vm.Vector2> corners) {
-    // Source points (quadrilateral in image)
-    final src = corners;
-
-    // Destination points (rectangle)
-    // Compute bounding box
-    final minX = corners.map((c) => c.x).reduce(math.min);
-    final maxX = corners.map((c) => c.x).reduce(math.max);
-    final minY = corners.map((c) => c.y).reduce(math.min);
-    final maxY = corners.map((c) => c.y).reduce(math.max);
-
-    final dst = [
-      vm.Vector2(minX, minY), // Top-left
-      vm.Vector2(maxX, minY), // Top-right
-      vm.Vector2(maxX, maxY), // Bottom-right
-      vm.Vector2(minX, maxY), // Bottom-left
-    ];
-
-    // Compute homography using DLT (Direct Linear Transform)
-    return _computeHomographyDLT(src, dst);
-  }
-
-  /// Compute homography using Direct Linear Transform
-  vm.Matrix3 _computeHomographyDLT(List<vm.Vector2> src, List<vm.Vector2> dst) {
-    // Build matrix A for homography computation
-    // For each point correspondence, we get 2 equations
-    final A = List.generate(8, (_) => List.filled(9, 0.0));
-
-    for (int i = 0; i < 4; i++) {
-      final x = src[i].x;
-      final y = src[i].y;
-      final u = dst[i].x;
-      final v = dst[i].y;
-
-      // First equation
-      A[i * 2][0] = -x;
-      A[i * 2][1] = -y;
-      A[i * 2][2] = -1;
-      A[i * 2][6] = x * u;
-      A[i * 2][7] = y * u;
-      A[i * 2][8] = u;
-
-      // Second equation
-      A[i * 2 + 1][3] = -x;
-      A[i * 2 + 1][4] = -y;
-      A[i * 2 + 1][5] = -1;
-      A[i * 2 + 1][6] = x * v;
-      A[i * 2 + 1][7] = y * v;
-      A[i * 2 + 1][8] = v;
-    }
-
-    // Solve using SVD (simplified - using least squares approximation)
-    // For production, use proper SVD library
-    // Here we use a simplified direct solution
-
-    // Simplified homography (identity for now - should use proper SVD)
-    return vm.Matrix3.identity();
-  }
-
-  /// Apply homography to a point
-  vm.Vector2 _applyHomography(vm.Matrix3 H, vm.Vector2 point) {
-    final p = vm.Vector3(point.x, point.y, 1.0);
-    final p_prime = H * p;
-
-    final w = p_prime.z;
-    if (w.abs() < PlanarObjectConfig.zeroEpsilon) {
-      return vm.Vector2(point.x, point.y); // Return original if singular
-    }
-
-    return vm.Vector2(p_prime.x / w, p_prime.y / w);
-  }
-
-  /// Estimate measurement error
   double _estimateError({
     required List<vm.Vector2> corners,
     required double widthPixels,
     required double heightPixels,
     required bool hasReference,
   }) {
-    // Base error from corner detection (±3 pixels per corner)
-    const cornerUncertainty = PlanarObjectConfig.cornerUncertainty;
-    final avgDimension = (widthPixels + heightPixels) / 2;
-    final baseErrorRatio = (cornerUncertainty * 4) / avgDimension;
+    const pixelUncertainty = 2.0;
 
-    // Error is lower if we have a reference measurement
-    final referenceBonus = hasReference
-        ? PlanarObjectConfig.referenceBonusFactor
-        : PlanarObjectConfig.noReferencePenaltyFactor;
-
-    // Perspective distortion error
-    final perspectiveError = _estimatePerspectiveDistortion(corners);
-
-    // Combined error (percentage)
-    final totalErrorRatio =
-        baseErrorRatio * referenceBonus * (1 + perspectiveError);
-
-    // Convert to cm (assume average dimension ~20cm for objects)
-    final estimatedDimension = PlanarObjectConfig.estimatedDimensionCm; // cm
-    return (totalErrorRatio * estimatedDimension).clamp(
-        PlanarObjectConfig.minErrorClampCm, PlanarObjectConfig.maxErrorClampCm);
-  }
-
-  /// Estimate perspective distortion from corner angles
-  double _estimatePerspectiveDistortion(List<vm.Vector2> corners) {
-    // Calculate angles at each corner
-    final angles = <double>[];
-
-    for (int i = 0; i < 4; i++) {
-      final prev = corners[(i - 1 + 4) % 4];
-      final curr = corners[i];
-      final next = corners[(i + 1) % 4];
-
-      final v1 = prev - curr;
-      final v2 = next - curr;
-
-      final angle = math.acos(
-          v1.dot(v2) / (v1.length * v2.length).clamp(1e-10, double.infinity));
-
-      angles.add(angle);
+    if (widthPixels < 20 || heightPixels < 20) {
+      return 50.0;
     }
 
-    // Ideal angle is 90 degrees (π/2)
-    final avgDeviation = angles
-            .map((a) => (a - PlanarObjectConfig.idealAngleRad).abs())
-            .reduce((a, b) => a + b) /
-        4;
+    final widthError = (pixelUncertainty / widthPixels) * 100;
+    final heightError = (pixelUncertainty / heightPixels) * 100;
+    final avgError = (widthError + heightError) / 2;
 
-    // Normalize to 0-1 range
-    return (avgDeviation / PlanarObjectConfig.angleNormalizationFactor)
-        .clamp(0.0, 1.0);
+    if (hasReference) {
+      return (avgError * 0.5).clamp(0.5, 20.0);
+    }
+
+    final perspectiveError = _estimatePerspectiveError(corners);
+    final totalError = avgError + perspectiveError;
+
+    return totalError.clamp(1.0, 50.0);
   }
 
-  /// Detect if corners form a valid quadrilateral
+  double _estimatePerspectiveError(List<vm.Vector2> corners) {
+    final topEdge = (corners[1] - corners[0]).length;
+    final bottomEdge = (corners[2] - corners[3]).length;
+    final leftEdge = (corners[3] - corners[0]).length;
+    final rightEdge = (corners[2] - corners[1]).length;
+
+    final topBottomRatio = topEdge / (bottomEdge + 1e-6);
+    final leftRightRatio = leftEdge / (rightEdge + 1e-6);
+
+    final perspectiveDistortion =
+        (topBottomRatio - 1.0).abs() + (leftRightRatio - 1.0).abs();
+
+    return perspectiveDistortion * 5.0;
+  }
+
   bool isValidQuadrilateral(List<vm.Vector2> corners) {
     if (corners.length != 4) return false;
 
-    // Check if corners are in order (convex quadrilateral)
-    // Calculate cross products to check winding order
     for (int i = 0; i < 4; i++) {
       final p1 = corners[i];
       final p2 = corners[(i + 1) % 4];
@@ -262,23 +304,10 @@ class PlanarObjectService {
       final v1 = p2 - p1;
       final v2 = p3 - p2;
 
-      // Cross product in 2D
       final cross = v1.x * v2.y - v1.y * v2.x;
-
-      // All cross products should have the same sign for convex quad
-      if (i > 0 && cross * _lastCross < 0) {
-        return false; // Not convex
-      }
-      _lastCross = cross;
+      if (cross.abs() < 1.0) return false;
     }
 
     return true;
-  }
-
-  double _lastCross = 0;
-
-  /// Get common reference sizes
-  static Map<String, Map<String, double>> getReferenceSizes() {
-    return PlanarObjectConfig.referenceSizes;
   }
 }

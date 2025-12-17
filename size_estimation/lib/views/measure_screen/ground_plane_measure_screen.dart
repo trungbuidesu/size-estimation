@@ -15,7 +15,8 @@ class GroundPlaneMeasureScreen extends StatefulWidget {
   // Optional: Points selected on live preview (to be scaled to image coordinates)
   final vm.Vector2? initialPointA;
   final vm.Vector2? initialPointB;
-  final Size? previewSize; // Preview size for coordinate scaling
+  final Size? previewSize; // UI Size for UI coordinate scaling
+  final Size? kOutBaseSize; // Buffer Size for K matrix scaling
 
   const GroundPlaneMeasureScreen({
     super.key,
@@ -27,6 +28,7 @@ class GroundPlaneMeasureScreen extends StatefulWidget {
     this.initialPointA,
     this.initialPointB,
     this.previewSize,
+    this.kOutBaseSize,
   });
 
   @override
@@ -42,11 +44,16 @@ class _GroundPlaneMeasureScreenState extends State<GroundPlaneMeasureScreen> {
   // Layout state for hit testing
   Rect? _imageRect;
 
+  // Store scaled image coordinates from preview (if provided)
+  vm.Vector2? _scaledPointA;
+  vm.Vector2? _scaledPointB;
+  bool _initialPointsCalculated = false;
+
   @override
   void initState() {
     super.initState();
 
-    // If initial points are provided, scale them from preview to image coordinates
+    // Calculate scaled image coordinates (but don't add to _points yet)
     if (widget.initialPointA != null &&
         widget.initialPointB != null &&
         widget.previewSize != null) {
@@ -55,24 +62,76 @@ class _GroundPlaneMeasureScreenState extends State<GroundPlaneMeasureScreen> {
       final scaleY =
           widget.originalImageSize.height / widget.previewSize!.height;
 
-      // Scale points
-      final scaledPointA = Offset(
+      // Store scaled IMAGE coordinates
+      _scaledPointA = vm.Vector2(
         widget.initialPointA!.x * scaleX,
         widget.initialPointA!.y * scaleY,
       );
-      final scaledPointB = Offset(
+      _scaledPointB = vm.Vector2(
         widget.initialPointB!.x * scaleX,
         widget.initialPointB!.y * scaleY,
       );
 
-      // Pre-populate points
-      _points.add(scaledPointA);
-      _points.add(scaledPointB);
+      // Calculate measurement from scaled points immediately
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted && !_initialPointsCalculated) {
+          _initialPointsCalculated = true;
 
-      // Calculate initial measurement
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _calculateMeasurements();
+          // Wait for layout to be ready (so _scale and _offset are calculated)
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          if (!mounted) return;
+
+          // Convert image coordinates to UI coordinates
+          final uiPointA = Offset(
+            _scaledPointA!.x * _scale + _offset.dx,
+            _scaledPointA!.y * _scale + _offset.dy,
+          );
+          final uiPointB = Offset(
+            _scaledPointB!.x * _scale + _offset.dx,
+            _scaledPointB!.y * _scale + _offset.dy,
+          );
+
+          // Add to UI points
+          setState(() {
+            _points.add(uiPointA);
+            _points.add(uiPointB);
+          });
+
+          // Calculate measurement
+          try {
+            // SCALING K Matrix
+            IntrinsicMatrix usedK = widget.kOut;
+            if (widget.kOutBaseSize != null) {
+              final kScaleX =
+                  widget.originalImageSize.width / widget.kOutBaseSize!.width;
+              final kScaleY =
+                  widget.originalImageSize.height / widget.kOutBaseSize!.height;
+              usedK = widget.kOut.copyWith(
+                fx: widget.kOut.fx * kScaleX,
+                fy: widget.kOut.fy * kScaleY,
+                cx: widget.kOut.cx * kScaleX,
+                cy: widget.kOut.cy * kScaleY,
+              );
+            }
+
+            final m = await _service.measureDistance(
+              imagePointA: _scaledPointA!,
+              imagePointB: _scaledPointB!,
+              kOut: usedK,
+              orientation: widget.orientation,
+              cameraHeightMeters: widget.cameraHeightMeters,
+              imageWidth: widget.originalImageSize.width.toInt(),
+              imageHeight: widget.originalImageSize.height.toInt(),
+            );
+            if (mounted) {
+              setState(() {
+                _measurements.add(m);
+              });
+            }
+          } catch (e) {
+            debugPrint("Initial measurement error: $e");
+          }
         }
       });
     }
@@ -126,10 +185,25 @@ class _GroundPlaneMeasureScreenState extends State<GroundPlaneMeasureScreen> {
       final imgP2 = _mapToImageCoordinates(uiP2);
 
       try {
+        // SCALING K Matrix
+        IntrinsicMatrix usedK = widget.kOut;
+        if (widget.kOutBaseSize != null) {
+          final kScaleX =
+              widget.originalImageSize.width / widget.kOutBaseSize!.width;
+          final kScaleY =
+              widget.originalImageSize.height / widget.kOutBaseSize!.height;
+          usedK = widget.kOut.copyWith(
+            fx: widget.kOut.fx * kScaleX,
+            fy: widget.kOut.fy * kScaleY,
+            cx: widget.kOut.cx * kScaleX,
+            cy: widget.kOut.cy * kScaleY,
+          );
+        }
+
         final m = await _service.measureDistance(
           imagePointA: vm.Vector2(imgP1.dx, imgP1.dy),
           imagePointB: vm.Vector2(imgP2.dx, imgP2.dy),
-          kOut: widget.kOut,
+          kOut: usedK,
           orientation: widget.orientation,
           cameraHeightMeters: widget.cameraHeightMeters,
           imageWidth: widget.originalImageSize.width.toInt(),
@@ -181,52 +255,68 @@ class _GroundPlaneMeasureScreenState extends State<GroundPlaneMeasureScreen> {
 
             // 2. Image Area (Expanded to fill remaining space)
             Expanded(
-              child: Align(
-                alignment: Alignment.center,
-                child: AspectRatio(
-                  // Lock to 3:4 aspect ratio to match camera preview
-                  aspectRatio: 3.0 / 4.0,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Within AspectRatio, the constraints.biggest IS the image display area
-                      final displaySize = constraints.biggest;
+              child: Container(
+                color: Colors.black, // Dark background for letterboxing
+                width: double.infinity,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Calculate the display rectangle for BoxFit.contain
+                    final double aspectParams = widget.originalImageSize.width /
+                        widget.originalImageSize.height;
+                    final double aspectConstraints =
+                        constraints.maxWidth / constraints.maxHeight;
 
-                      // Scale calculation for coordinate mapping
-                      _scale =
-                          displaySize.width / widget.originalImageSize.width;
+                    double displayWidth, displayHeight;
+                    double offsetX, offsetY;
 
-                      // Offset is 0,0 since AspectRatio constrains to exact image bounds
-                      _offset = Offset.zero;
-                      _layoutSize = displaySize;
+                    if (aspectParams > aspectConstraints) {
+                      // Constrained by width
+                      displayWidth = constraints.maxWidth;
+                      displayHeight = displayWidth / aspectParams;
+                      offsetX = 0;
+                      offsetY = (constraints.maxHeight - displayHeight) / 2;
+                    } else {
+                      // Constrained by height
+                      displayHeight = constraints.maxHeight;
+                      displayWidth = displayHeight * aspectParams;
+                      offsetX = (constraints.maxWidth - displayWidth) / 2;
+                      offsetY = 0;
+                    }
 
-                      // Image rect is the entire AspectRatio area
-                      _imageRect = Rect.fromLTWH(
-                          0, 0, displaySize.width, displaySize.height);
+                    // Store layout parameters for pointer mapping
+                    _scale = displayWidth / widget.originalImageSize.width;
+                    _offset = Offset(offsetX, offsetY);
+                    _imageRect = Rect.fromLTWH(
+                        offsetX, offsetY, displayWidth, displayHeight);
 
-                      return GestureDetector(
-                        onTapUp: (details) => _addPoint(details.localPosition),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            // Image fills the AspectRatio exactly
-                            Image.file(
+                    return GestureDetector(
+                      onTapUp: (details) => _addPoint(details.localPosition),
+                      child: Stack(
+                        children: [
+                          // Centered Image
+                          Positioned(
+                            left: offsetX,
+                            top: offsetY,
+                            width: displayWidth,
+                            height: displayHeight,
+                            child: Image.file(
                               widget.imageFile,
-                              fit: BoxFit
-                                  .cover, // Cover to fill AspectRatio exactly
+                              fit: BoxFit.contain,
                             ),
-                            // Overlay Painting
-                            CustomPaint(
+                          ),
+                          // Overlay Painting (Full Space)
+                          Positioned.fill(
+                            child: CustomPaint(
                               painter: _MeasurePainter(
                                 points: _points,
                                 measurements: _measurements,
                               ),
-                              size: Size.infinite,
                             ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

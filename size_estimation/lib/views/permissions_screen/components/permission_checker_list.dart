@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:size_estimation/constants/index.dart';
+import 'package:size_estimation/models/index.dart';
 import 'package:size_estimation/views/permissions_screen/components/index.dart';
 
 class PermissionCheckerList extends StatefulWidget {
@@ -19,13 +20,24 @@ class PermissionCheckerList extends StatefulWidget {
 class _PermissionCheckerListState extends State<PermissionCheckerList> {
   final Map<Permission, PermissionStatus?> _statuses = {};
   bool _loading = false;
+  List<PermissionItem> _requiredPermissions = [];
 
   @override
   void initState() {
     super.initState();
-    for (var item in requiredPermissions) {
+    _loadPermissions();
+  }
+
+  Future<void> _loadPermissions() async {
+    // Get permissions based on platform/version
+    _requiredPermissions = await getRequiredPermissions();
+
+    // Initialize status map
+    for (var item in _requiredPermissions) {
       _statuses[item.permission] = null;
     }
+
+    // Refresh statuses
     _refreshStatuses();
   }
 
@@ -47,7 +59,7 @@ class _PermissionCheckerListState extends State<PermissionCheckerList> {
     }
 
     final newStatuses = <Permission, PermissionStatus>{};
-    for (var item in requiredPermissions) {
+    for (var item in _requiredPermissions) {
       newStatuses[item.permission] = await item.permission.status;
     }
 
@@ -160,9 +172,9 @@ class _PermissionCheckerListState extends State<PermissionCheckerList> {
           ListView.builder(
             padding: const EdgeInsets.only(
                 top: 16, bottom: 100), // Dành không gian cho nút
-            itemCount: requiredPermissions.length,
+            itemCount: _requiredPermissions.length,
             itemBuilder: (context, index) {
-              final item = requiredPermissions[index];
+              final item = _requiredPermissions[index];
               final status = _statuses[item.permission];
 
               return PermissionTile(
