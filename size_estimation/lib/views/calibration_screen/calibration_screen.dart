@@ -30,11 +30,12 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   int _boardWidth = 11; // Columns
   int _boardHeight = 8; // Rows
   double _squareSize = 15.0; // Checker Width (mm)
+  double? _markerLength; // Marker Length (mm)
 
   // Other image fields
   double _boardWidthMm = 200.0;
   double _boardHeightMm = 150.0;
-  String _dictionaryId = 'DICT_4x4';
+  String _dictionaryId = 'DICT_4x4_50';
   int _startId = 0;
 
   Future<void> _pickImages() async {
@@ -101,8 +102,8 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
         'boardWidth': _boardWidth, // Columns
         'boardHeight': _boardHeight, // Rows
         'squareSize': _squareSize, // Checker Width
-        'markerLength':
-            _squareSize * 0.8, // Estimate marker length (0.8 is common)
+        'markerLength': _markerLength ??
+            (_squareSize * 0.8), // Estimate marker length (0.8 is common)
         'boardWidthMm': _boardWidthMm,
         'boardHeightMm': _boardHeightMm,
         'dictionaryId': _dictionaryId,
@@ -394,17 +395,52 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
               onChanged: (v) => _squareSize = double.tryParse(v) ?? 25.0,
             ),
             const SizedBox(height: 12),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'Marker Length (mm)',
+                border: OutlineInputBorder(),
+                isDense: true,
+                helperText: 'Default: Square Size * 0.8',
+              ),
+              keyboardType: TextInputType.number,
+              controller: TextEditingController(
+                  text: _markerLength?.toString() ??
+                      (_squareSize * 0.8).toString()),
+              onChanged: (v) => _markerLength = double.tryParse(v),
+            ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: 'DICT_4x4',
+              value: _dictionaryId.startsWith('DICT')
+                  ? _dictionaryId
+                  : 'DICT_4x4_50',
               decoration: const InputDecoration(
                 labelText: AppStrings.dictLabel,
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
               items: const [
-                DropdownMenuItem(value: 'DICT_4x4', child: Text('DICT_4x4')),
-                DropdownMenuItem(value: 'DICT_5x5', child: Text('DICT_5x5')),
-                DropdownMenuItem(value: 'DICT_6x6', child: Text('DICT_6x6')),
+                DropdownMenuItem(
+                    value: 'DICT_4x4_50', child: Text('4x4 (50 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_4x4_100', child: Text('4x4 (100 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_4x4_250', child: Text('4x4 (250 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_4x4_1000', child: Text('4x4 (1000 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_5x5_50', child: Text('5x5 (50 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_5x5_100', child: Text('5x5 (100 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_5x5_250', child: Text('5x5 (250 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_5x5_1000', child: Text('5x5 (1000 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_6x6_50', child: Text('6x6 (50 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_6x6_100', child: Text('6x6 (100 markers)')),
+                DropdownMenuItem(
+                    value: 'DICT_6x6_250', child: Text('6x6 (250 markers)')),
               ],
               onChanged: (v) {
                 if (v != null) setState(() => _dictionaryId = v);
@@ -418,7 +454,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                 isDense: true,
               ),
               keyboardType: TextInputType.number,
-              controller: TextEditingController(text: "0"),
+              controller: TextEditingController(text: _startId.toString()),
               onChanged: (v) => _startId = int.tryParse(v) ?? 0,
             ),
           ],

@@ -40,7 +40,7 @@ class _MultiCaptureCameraScreenState extends State<MultiCaptureCameraScreen> {
 
       _controller = CameraController(
         cameras.first,
-        ResolutionPreset.high,
+        ResolutionPreset.high, // MUST MATCH CameraScreen for valid calibration
         enableAudio: false,
       );
 
@@ -136,6 +136,24 @@ class _MultiCaptureCameraScreenState extends State<MultiCaptureCameraScreen> {
     Navigator.pop(context, selectedImages);
   }
 
+  void _onTapFocus(TapDownDetails details, BuildContext context) {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    final RenderBox box = context.findRenderObject() as RenderBox;
+    final Offset localPoint = box.globalToLocal(details.globalPosition);
+    final Size size = box.size;
+
+    final double x = localPoint.dx / size.width;
+    final double y = localPoint.dy / size.height;
+
+    try {
+      _controller!.setFocusPoint(Offset(x, y));
+      _controller!.setFocusMode(FocusMode.auto);
+    } catch (e) {
+      // Ignore focus errors
+    }
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
@@ -165,7 +183,12 @@ class _MultiCaptureCameraScreenState extends State<MultiCaptureCameraScreen> {
       children: [
         // Camera Preview - Full screen
         Positioned.fill(
-          child: CameraPreview(_controller!),
+          child: GestureDetector(
+            onTapDown: (details) {
+              _onTapFocus(details, context);
+            },
+            child: CameraPreview(_controller!),
+          ),
         ),
 
         // Top Bar

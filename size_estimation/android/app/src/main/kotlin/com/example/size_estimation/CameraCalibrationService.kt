@@ -1,15 +1,19 @@
 package com.example.size_estimation
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import org.opencv.android.Utils
-import org.opencv.calib3d.Calib3d
-import org.opencv.core.*
-import org.opencv.imgproc.Imgproc
+import org.opencv.core.Mat
+import org.opencv.core.MatOfPoint2f
+import org.opencv.core.Size
+import org.opencv.core.CvType
+import org.opencv.imgcodecs.Imgcodecs
+import org.opencv.aruco.Aruco
+import org.opencv.aruco.Dictionary
+import org.opencv.aruco.CharucoBoard
+import android.util.Log
 import java.io.File
+import java.util.ArrayList
 
 class CameraCalibrationService {
-    
+
     data class CalibrationResult(
         val success: Boolean,
         val fx: Double = 0.0,
@@ -20,204 +24,162 @@ class CameraCalibrationService {
         val rmsError: Double = 0.0,
         val errorMessage: String? = null
     )
-    
-    /**
-     * Calibrate camera using chessboard images
-     * @param imagePaths List of image file paths
-     * @param boardWidth Number of inner corners horizontally
-     * @param boardHeight Number of inner corners vertically
-     * @param squareSize Size of chessboard square in mm
-     * @return CalibrationResult
-     */
+
+    companion object {
+        init {
+            // Load the native library if needed for other things, but OpenCV JAR loads its own natives usually.
+            // Often "opencv_java4" or similar.
+            System.loadLibrary("photogrammetry")
+        }
+    }
+
+    // IMPORTANT: Remove the generic native method definition since we are using Kotlin wrappers now.
+    // external fun performCalibration(...) 
+
     fun calibrateCamera(
         imagePaths: List<String>,
         boardWidth: Int,
         boardHeight: Int,
         squareSize: Float,
-        targetType: String = "Chessboard",
-        dictionaryId: String = "DICT_4x4"
+        markerLength: Float, // Received from Dart
+        targetType: String,
+        dictionaryId: String
     ): CalibrationResult {
-        if (targetType == "ChArUco") {
-             // TODO: Implement ChArUco calibration using Aruco module if available.
-             // Currently com.quickbirdstudios:opencv:4.5.3.0 does not typically include Aruco.
-             return CalibrationResult(
-                success = false,
-                errorMessage = "ChArUco calibration requires 'opencv-contrib' or a custom build with Aruco module. Only Chessboard is currently supported by the installed OpenCV library."
-             )
-        }
+        return try {
+            Log.d("CameraCalibration", "Starting Kotlin-based ChArUco calibration. Images: ${imagePaths.size}")
 
-        try {
-            val boardSize = Size(boardWidth.toDouble(), boardHeight.toDouble())
-            val objectPoints = mutableListOf<Mat>()
-            val imagePoints = mutableListOf<Mat>()
-            
-            // Prepare object points (0,0,0), (1,0,0), (2,0,0) ... (boardWidth-1, boardHeight-1, 0)
-            val objp = Mat(boardHeight * boardWidth, 1, CvType.CV_32FC3)
-            var idx = 0
-            for (i in 0 until boardHeight) {
-                for (j in 0 until boardWidth) {
-                    objp.put(idx++, 0, 
-                        floatArrayOf(j * squareSize, i * squareSize, 0f))
-                }
+            if (targetType != "ChArUco") {
+                 return CalibrationResult(success = false, errorMessage = "Only ChArUco is supported in this implementation")
             }
             
-            var imageSize: Size? = null
-            var successCount = 0
+            val markerSize = if (markerLength > 0) markerLength else squareSize * 0.8f
+
+            // 1. Setup Dictionary
+            // Supported: DICT_4X4_50, _100, _250, _1000, etc.
+            val dictCode = when(dictionaryId) {
+                "DICT_4x4_50" -> Aruco.DICT_4X4_50
+                "DICT_4x4_100" -> Aruco.DICT_4X4_100
+                "DICT_4x4_250" -> Aruco.DICT_4X4_250
+                "DICT_4x4_1000" -> Aruco.DICT_4X4_1000
+                "DICT_5x5_50" -> Aruco.DICT_5X5_50
+                "DICT_5x5_100" -> Aruco.DICT_5X5_100
+                "DICT_5x5_250" -> Aruco.DICT_5X5_250
+                "DICT_5x5_1000" -> Aruco.DICT_5X5_1000
+                "DICT_6x6_50" -> Aruco.DICT_6X6_50
+                "DICT_6x6_100" -> Aruco.DICT_6X6_100
+                "DICT_6x6_250" -> Aruco.DICT_6X6_250
+                "DICT_6x6_1000" -> Aruco.DICT_6X6_1000
+                // Legacy/Short fallbacks
+                "DICT_4x4" -> Aruco.DICT_4X4_50
+                "DICT_5x5" -> Aruco.DICT_5X5_50
+                "DICT_6x6" -> Aruco.DICT_6X6_50
+                else -> Aruco.DICT_4X4_50
+            }
+            val dictionary = Aruco.getPredefinedDictionary(dictCode)
+
+            // 2. Setup Board
+            // CharucoBoard.create(int squaresX, int squaresY, float squareLength, float markerLength, Dictionary dictionary)
+            val board = CharucoBoard.create(boardWidth, boardHeight, squareSize, markerSize, dictionary)
+
+            // 3. Detect
+            val allCharucoCorners = ArrayList<Mat>()
+            val allCharucoIds = ArrayList<Mat>()
             
-            // Process each image
-            for (imagePath in imagePaths) {
-                val bitmap = BitmapFactory.decodeFile(imagePath) ?: continue
+            var width = 0
+            var height = 0
+
+            for (path in imagePaths) {
+                val img = Imgcodecs.imread(path)
+                if (img.empty()) continue
                 
-                // Convert to OpenCV Mat
-                val mat = Mat()
-                Utils.bitmapToMat(bitmap, mat)
-                
-                // Convert to grayscale
-                val gray = Mat()
-                Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
-                
-                if (imageSize == null) {
-                    imageSize = gray.size()
+                // Consistency Check
+                if (width == 0) {
+                    width = img.cols()
+                    height = img.rows()
+                } else {
+                    if (img.cols() != width || img.rows() != height) {
+                        Log.w("CameraCalibration", "Skipping image $path due to size mismatch: ${img.cols()}x${img.rows()} vs ${width}x${height}")
+                        img.release()
+                        continue
+                    }
                 }
+
+                val markerCorners = ArrayList<Mat>()
+                val markerIds = Mat()
                 
-                // Find chessboard corners
-                val corners = MatOfPoint2f()
-                val found = Calib3d.findChessboardCorners(
-                    gray,
-                    boardSize,
-                    corners,
-                    Calib3d.CALIB_CB_ADAPTIVE_THRESH + 
-                    Calib3d.CALIB_CB_NORMALIZE_IMAGE +
-                    Calib3d.CALIB_CB_FAST_CHECK
-                )
-                
-                if (found) {
-                    // Refine corner locations to subpixel accuracy
-                    val criteria = TermCriteria(
-                        TermCriteria.EPS + TermCriteria.MAX_ITER,
-                        30,
-                        0.001
-                    )
-                    Imgproc.cornerSubPix(gray, corners, Size(11.0, 11.0), 
-                        Size(-1.0, -1.0), criteria)
+                // Detect Markers
+                Aruco.detectMarkers(img, dictionary, markerCorners, markerIds)
+
+                if (markerIds.rows() > 0) {
+                    val charucoCorners = Mat()
+                    val charucoIds = Mat()
                     
-                    objectPoints.add(objp.clone())
-                    imagePoints.add(corners)
-                    successCount++
+                    // Interpolate Charuco
+                    Aruco.interpolateCornersCharuco(markerCorners, markerIds, img, board, charucoCorners, charucoIds)
+                    
+                    if (charucoIds.rows() > 4) {
+                        allCharucoCorners.add(charucoCorners)
+                        allCharucoIds.add(charucoIds)
+                    }
                 }
-                
-                // Clean up
-                mat.release()
-                gray.release()
-                corners.release()
-                bitmap.recycle()
+                img.release()
             }
-            
-            if (successCount < 10) {
-                return CalibrationResult(
-                    success = false,
-                    errorMessage = "Not enough valid images. Found $successCount, need at least 10."
-                )
+
+            if (allCharucoCorners.size < 5) {
+                return CalibrationResult(success = false, errorMessage = "Not enough valid frames (detected ${allCharucoCorners.size} boards, need 5+)")
             }
-            
-            if (imageSize == null) {
-                return CalibrationResult(
-                    success = false,
-                    errorMessage = "Could not determine image size"
-                )
-            }
-            
-            // Calibrate camera
-            val cameraMatrix = Mat()
+
+            // 4. Calibrate
+            val cameraMatrix = Mat.eye(3, 3, CvType.CV_64F)
             val distCoeffs = Mat()
-            val rvecs = mutableListOf<Mat>()
-            val tvecs = mutableListOf<Mat>()
+            val rvecs = ArrayList<Mat>()
+            val tvecs = ArrayList<Mat>()
             
-            val rmsError = Calib3d.calibrateCamera(
-                objectPoints,
-                imagePoints,
+            val imageSize = Size(width.toDouble(), height.toDouble())
+
+            val rms = Aruco.calibrateCameraCharuco(
+                allCharucoCorners,
+                allCharucoIds,
+                board,
                 imageSize,
                 cameraMatrix,
                 distCoeffs,
                 rvecs,
-                tvecs,
-                Calib3d.CALIB_FIX_PRINCIPAL_POINT
+                tvecs
             )
-            
-            // Extract calibration parameters
+
+            // 5. Extract Result
             val fx = cameraMatrix.get(0, 0)[0]
             val fy = cameraMatrix.get(1, 1)[0]
             val cx = cameraMatrix.get(0, 2)[0]
             val cy = cameraMatrix.get(1, 2)[0]
             
-            // Extract distortion coefficients (k1, k2, p1, p2, k3)
             val distArray = DoubleArray(distCoeffs.total().toInt())
             distCoeffs.get(0, 0, distArray)
-            
-            // Clean up
-            objp.release()
-            cameraMatrix.release()
-            distCoeffs.release()
-            objectPoints.forEach { it.release() }
-            imagePoints.forEach { it.release() }
-            rvecs.forEach { it.release() }
-            tvecs.forEach { it.release() }
-            
-            return CalibrationResult(
+
+            CalibrationResult(
                 success = true,
                 fx = fx,
                 fy = fy,
                 cx = cx,
                 cy = cy,
                 distortionCoefficients = distArray,
-                rmsError = rmsError
+                rmsError = rms
             )
-            
+
         } catch (e: Exception) {
-            return CalibrationResult(
-                success = false,
-                errorMessage = "Calibration failed: ${e.message}"
-            )
+            e.printStackTrace()
+            // Check for linkage errors
+            if (e is UnsatisfiedLinkError || e is NoClassDefFoundError) {
+                 CalibrationResult(success = false, errorMessage = "OpenCV Linkage Error: ${e.message}. Ensure opencv-contrib is included.")
+            } else {
+                 CalibrationResult(success = false, errorMessage = e.message)
+            }
         }
     }
     
-    /**
-     * Detect chessboard corners in a single image (for preview/validation)
-     */
-    fun detectChessboard(
-        imagePath: String,
-        boardWidth: Int,
-        boardHeight: Int
-    ): Boolean {
-        try {
-            val bitmap = BitmapFactory.decodeFile(imagePath) ?: return false
-            
-            val mat = Mat()
-            Utils.bitmapToMat(bitmap, mat)
-            
-            val gray = Mat()
-            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
-            
-            val boardSize = Size(boardWidth.toDouble(), boardHeight.toDouble())
-            val corners = MatOfPoint2f()
-            
-            val found = Calib3d.findChessboardCorners(
-                gray,
-                boardSize,
-                corners,
-                Calib3d.CALIB_CB_ADAPTIVE_THRESH + 
-                Calib3d.CALIB_CB_NORMALIZE_IMAGE +
-                Calib3d.CALIB_CB_FAST_CHECK
-            )
-            
-            mat.release()
-            gray.release()
-            corners.release()
-            bitmap.recycle()
-            
-            return found
-        } catch (e: Exception) {
-            return false
-        }
+    fun detectChessboard(imagePath: String, width: Int, height: Int): Boolean {
+        // Placeholder
+        return false
     }
 }

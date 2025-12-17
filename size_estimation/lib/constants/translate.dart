@@ -66,7 +66,7 @@ class AppStrings {
   static const String calibrationGuideTitle = 'Hướng Dẫn Hiệu Chuẩn';
   static const String step1 = 'In mẫu ChArUco (ví dụ: 5x7 hoặc 8x11)';
   static const String step2 =
-      'Chụp 15-30 ảnh từ các góc độ và khoảng cách khác nhau';
+      'Chụp 10-30 ảnh từ các góc độ và khoảng cách khác nhau';
   static const String step3 = 'Đảm bảo toàn bộ bảng đều nằm trong khung hình';
   static const String step4 = 'Nhấn "Chạy Hiệu Chuẩn" để xử lý';
 

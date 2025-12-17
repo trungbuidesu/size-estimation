@@ -88,7 +88,8 @@ class MainActivity: FlutterActivity() {
                         val boardWidth = call.argument<Int>("boardWidth") ?: 9
                         val boardHeight = call.argument<Int>("boardHeight") ?: 6
                         val squareSize = call.argument<Double>("squareSize")?.toFloat() ?: 25.0f
-                        
+                        val markerLength = call.argument<Double>("markerLength")?.toFloat() ?: (squareSize * 0.8f)
+
                         // ChArUco Params
                         val dictionaryId = call.argument<String>("dictionaryId") ?: "DICT_4x4"
                         val startId = call.argument<Int>("startId") ?: 0
@@ -110,6 +111,7 @@ class MainActivity: FlutterActivity() {
                                     boardWidth,
                                     boardHeight,
                                     squareSize,
+                                    markerLength,
                                     targetType,
                                     dictionaryId
                                 )
