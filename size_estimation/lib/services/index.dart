@@ -1,14 +1,9 @@
 export 'calibration_service.dart';
 export 'camera_metadata_service.dart';
 export 'dynamic_intrinsics_service.dart';
-export 'edge_snapping_service.dart';
-export 'feature_tracking_service.dart';
 export 'ground_plane_service.dart';
+export 'image_processing_services/index.dart';
 export 'imu_service.dart';
-export 'lens_distortion_service.dart';
-export 'photogrammetry_service.dart';
 export 'planar_object_service.dart';
 export 'result_averaging_service.dart';
-export 'sensor_service.dart';
-export 'vanishing_point_service.dart';
 export 'vertical_object_service.dart';

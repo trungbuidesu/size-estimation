@@ -15,18 +15,8 @@ import 'package:size_estimation/views/shared_components/index.dart';
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/models/researcher_config.dart';
 import 'package:size_estimation/models/calibration_profile.dart';
-import 'package:size_estimation/services/calibration_service.dart';
-import 'package:size_estimation/services/dynamic_intrinsics_service.dart';
-import 'package:size_estimation/services/imu_service.dart';
+import 'package:size_estimation/services/index.dart';
 import 'package:size_estimation/models/camera_metadata.dart';
-import 'package:size_estimation/services/lens_distortion_service.dart';
-import 'package:size_estimation/services/edge_snapping_service.dart';
-import 'package:size_estimation/services/result_averaging_service.dart';
-import 'package:size_estimation/services/feature_tracking_service.dart'; // Added
-import 'package:size_estimation/services/vanishing_point_service.dart'; // Added
-import 'package:size_estimation/services/ground_plane_service.dart';
-import 'package:size_estimation/services/planar_object_service.dart';
-import 'package:size_estimation/services/vertical_object_service.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
 
 class CameraScreen extends StatefulWidget {

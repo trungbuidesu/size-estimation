@@ -1,4 +1,4 @@
-export 'calibration_playground/index.dart';
+export 'calibration_screen/index.dart';
 export 'camera_property/index.dart';
 export 'camera_screen/index.dart';
 export 'methods_screen/index.dart';

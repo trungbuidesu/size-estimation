@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:size_estimation/services/imu_service.dart';
+
 class MultiCaptureCameraScreen extends StatefulWidget {
   const MultiCaptureCameraScreen({super.key});
 
@@ -20,10 +22,22 @@ class _MultiCaptureCameraScreenState extends State<MultiCaptureCameraScreen> {
   bool _showAlbum = false;
   bool _isCapturing = false;
 
+  final IMUService _imuService = IMUService();
+  IMUOrientation? _currentOrientation;
+
   @override
   void initState() {
     super.initState();
     _initializeCamera();
+
+    _imuService.startListening();
+    _imuService.orientationStream.listen((orientation) {
+      if (mounted) {
+        setState(() {
+          _currentOrientation = orientation;
+        });
+      }
+    });
   }
 
   Future<void> _initializeCamera() async {
@@ -156,6 +170,7 @@ class _MultiCaptureCameraScreenState extends State<MultiCaptureCameraScreen> {
 
   @override
   void dispose() {
+    _imuService.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -234,6 +249,145 @@ class _MultiCaptureCameraScreenState extends State<MultiCaptureCameraScreen> {
             ),
           ),
         ),
+
+        // IMU Overlay - Fixed position
+        if (_currentOrientation != null)
+          Positioned(
+            top: 80, // Below top bar
+            left: 8,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.all(8.0),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Euler Angles
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('EULER (deg)',
+                            style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 9,
+                                letterSpacing: 0.5,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        // Swap roll and pitch when device is rotated ~90°
+                        Builder(builder: (context) {
+                          final absRoll =
+                              _currentOrientation!.rollDegrees.abs();
+                          final isRotated = absRoll > 75 && absRoll < 105;
+
+                          final rollValue = _currentOrientation!.rollDegrees;
+                          final pitchValue = _currentOrientation!.pitchDegrees;
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // First line - R or P depending on rotation
+                              Text(
+                                  isRotated
+                                      ? 'P: ${pitchValue.toStringAsFixed(1)}°'
+                                      : 'R: ${rollValue.toStringAsFixed(1)}°',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontFamily: 'Courier',
+                                      fontWeight: FontWeight.bold)),
+                              // Second line - P or R depending on rotation
+                              Text(
+                                  isRotated
+                                      ? 'R: ${rollValue.toStringAsFixed(1)}°'
+                                      : 'P: ${pitchValue.toStringAsFixed(1)}°',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontFamily: 'Courier',
+                                      fontWeight: FontWeight.bold)),
+                              Text(
+                                  'Y: ${_currentOrientation!.yawDegrees.toStringAsFixed(1)}°',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontFamily: 'Courier',
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    // Rotation Matrix
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('ROTATION MATRIX R',
+                            style: TextStyle(
+                                color: Colors.cyan,
+                                fontSize: 9,
+                                letterSpacing: 0.5,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        ..._currentOrientation!
+                            .getRotationMatrixAsList()
+                            .map((row) => Text(
+                                  '[${row[0].toStringAsFixed(2)}, ${row[1].toStringAsFixed(2)}, ${row[2].toStringAsFixed(2)}]',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontFamily: 'Courier',
+                                      fontWeight: FontWeight.bold),
+                                )),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    // Gravity
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('GRAVITY',
+                            style: TextStyle(
+                                color: Colors.purpleAccent,
+                                fontSize: 9,
+                                letterSpacing: 0.5,
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 4),
+                        Text(
+                            'x: ${_currentOrientation!.gravity.x.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'y: ${_currentOrientation!.gravity.y.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                        Text(
+                            'z: ${_currentOrientation!.gravity.z.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontFamily: 'Courier',
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
 
         // Bottom Controls
         Positioned(
