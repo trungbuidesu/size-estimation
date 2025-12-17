@@ -5,18 +5,35 @@ import 'package:size_estimation/models/calibration_profile.dart';
 class CalibrationService {
   static const String _profilesKey = 'calibration_profiles';
   static const String _activeProfileKey = 'active_calibration_profile';
+  static const String _customProfileName = 'Custom Calibration';
 
   /// Save a calibration profile
-  Future<void> saveProfile(CalibrationProfile profile) async {
+  /// For custom calibration (from CalibrationScreen), only 1 profile is kept (overwrite)
+  Future<void> saveProfile(CalibrationProfile profile,
+      {bool isCustom = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final profiles = await getAllProfiles();
 
-    // Remove existing profile with same name
-    profiles.removeWhere((p) => p.name == profile.name);
-    profiles.add(profile);
+    if (isCustom) {
+      // Custom calibration: Remove all custom profiles and save only this one
+      profiles.removeWhere((p) => p.name == _customProfileName);
+
+      // Force name to be "Custom Calibration"
+      final customProfile = profile.copyWith(name: _customProfileName);
+      profiles.add(customProfile);
+    } else {
+      // Regular profile: Remove existing profile with same name
+      profiles.removeWhere((p) => p.name == profile.name);
+      profiles.add(profile);
+    }
 
     final jsonList = profiles.map((p) => p.toJson()).toList();
     await prefs.setString(_profilesKey, jsonEncode(jsonList));
+  }
+
+  /// Get the custom calibration profile (latest)
+  Future<CalibrationProfile?> getCustomProfile() async {
+    return getProfile(_customProfileName);
   }
 
   /// Get all saved calibration profiles

@@ -35,7 +35,7 @@ class LensDistortionService {
     double y = y_d;
 
     // Extract coefficients
-    final k1 = distCoeffs.length > 0 ? distCoeffs[0] : 0.0;
+    final k1 = distCoeffs.isNotEmpty ? distCoeffs[0] : 0.0;
     final k2 = distCoeffs.length > 1 ? distCoeffs[1] : 0.0;
     final p1 = distCoeffs.length > 2
         ? distCoeffs[2]

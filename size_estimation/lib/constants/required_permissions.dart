@@ -13,6 +13,14 @@ const List<PermissionItem> requiredPermissions = [
     permission: Permission.photos,
     title: 'Ảnh & Media (Thư viện)',
     icon: Icons.photo_library,
-    description: 'Cho phép truy cập thư viện ảnh và video để tải lên hoặc lưu hình ảnh.',
+    description:
+        'Cho phép truy cập thư viện ảnh và video để tải lên hoặc lưu hình ảnh.',
+  ),
+  PermissionItem(
+    permission: Permission.storage,
+    title: 'Lưu trữ (Storage)',
+    icon: Icons.sd_storage,
+    description:
+        'Cho phép lưu ảnh hiệu chỉnh vào thư mục Pictures. (Chỉ cần trên Android < 13)',
   ),
 ];

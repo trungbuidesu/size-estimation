@@ -18,6 +18,7 @@ import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/index.dart';
 import 'package:size_estimation/models/camera_metadata.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
+import 'package:size_estimation/views/measure_screen/ground_plane_measure_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -111,7 +112,7 @@ class _CameraScreenState extends State<CameraScreen>
   // Settings State
   int _timerDuration = 0;
   // Aspect ratio locked to 16:9
-  static const int _aspectRatioIndex = 2; // 16:9
+
   // Countdown State
   int _countdownSeconds = 0;
   bool _isCountingDown = false;
@@ -205,7 +206,7 @@ class _CameraScreenState extends State<CameraScreen>
 
       _controller = CameraController(
         _cameras![0],
-        ResolutionPreset.high,
+        ResolutionPreset.max, // Locked to 4:3
         enableAudio: false,
       );
 
@@ -274,25 +275,6 @@ class _CameraScreenState extends State<CameraScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
-  }
-
-  void _resetSession() {
-    setState(() {
-      _capturedImages.clear();
-
-      // Reset zoom lock
-      // Restore original zoom range
-      _controller?.getMaxZoomLevel().then((max) {
-        _controller?.getMinZoomLevel().then((min) {
-          if (mounted) {
-            setState(() {
-              _minZoom = min;
-              _maxZoom = max;
-            });
-          }
-        });
-      });
-    });
   }
 
   Future<void> _captureImage() async {
@@ -388,11 +370,31 @@ class _CameraScreenState extends State<CameraScreen>
 
       if (_groundPlaneMode && !_isFrozen) {
         setState(() {
-          _isFrozen = true;
-          _frozenImageFile = file;
           _isCapturing = false;
         });
-        await _controller!.pausePreview();
+
+        if (_currentKOut != null &&
+            _currentOrientation != null &&
+            _controller!.value.previewSize != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => GroundPlaneMeasureScreen(
+                imageFile: file,
+                kOut: _currentKOut!,
+                orientation: _currentOrientation!,
+                cameraHeightMeters: _cameraHeightMeters,
+                originalImageSize: _controller!.value.previewSize!,
+                // Pass initial points from live preview
+                initialPointA: _groundPointA,
+                initialPointB: _groundPointB,
+                previewSize: _controller!.value.previewSize,
+              ),
+            ),
+          );
+        } else {
+          _showError("Missing calibration data (K/IMU)");
+        }
         return;
       }
 
@@ -499,221 +501,6 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _showBaselineDialog(List<dynamic>? _) async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('TODO: Implement Capture Completion')),
-    );
-  }
-
-  // --- Gallery & Review Logic ---
-
-  void _openGallery() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.black87,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.7,
-              maxChildSize: 0.9,
-              minChildSize: 0.5,
-              builder: (context, scrollController) {
-                return Column(
-                  children: [
-                    // Header
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        children: [
-                          const Text(
-                            AppStrings.galleryTitle,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          TextButton.icon(
-                            onPressed: () {
-                              _confirmReset(context);
-                            },
-                            icon: const Icon(Icons.restart_alt,
-                                color: Colors.redAccent),
-                            label: const Text(
-                              'Chụp lại từ đầu',
-                              style: TextStyle(color: Colors.redAccent),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(color: Colors.white24),
-                    // Grid
-                    Expanded(
-                      child: _capturedImages.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'Chưa có ảnh nào',
-                                style: TextStyle(color: Colors.white54),
-                              ),
-                            )
-                          : GridView.builder(
-                              controller: scrollController,
-                              padding: const EdgeInsets.all(16),
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 10,
-                                mainAxisSpacing: 10,
-                              ),
-                              itemCount: _capturedImages.length,
-                              itemBuilder: (context, index) {
-                                final capturedImage = _capturedImages[index];
-                                return Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    GestureDetector(
-                                      onLongPress: () {
-                                        if (capturedImage.hasWarnings) {
-                                          _showWarningDetails(
-                                              capturedImage.warnings);
-                                        }
-                                      },
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.file(
-                                          capturedImage.file,
-                                          fit: BoxFit.cover,
-                                          color: capturedImage.hasWarnings
-                                              ? Colors.black38
-                                              : null,
-                                          colorBlendMode:
-                                              capturedImage.hasWarnings
-                                                  ? BlendMode.darken
-                                                  : null,
-                                        ),
-                                      ),
-                                    ),
-                                    if (capturedImage.hasWarnings)
-                                      Positioned(
-                                        top: 4,
-                                        left: 4,
-                                        child: GestureDetector(
-                                          onTap: () => _showWarningDetails(
-                                              capturedImage.warnings),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(4),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.orange,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.priority_high,
-                                              color: Colors.white,
-                                              size: 16,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    Positioned(
-                                      top: 4,
-                                      right: 4,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setSheetState(() {
-                                            _deleteImage(index);
-                                          });
-                                          // Update parent state as well to reflect in UI
-                                          this.setState(() {});
-                                          if (_capturedImages.isEmpty) {
-                                            Navigator.pop(ctx);
-                                          }
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.black54,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.close,
-                                            color: Colors.white,
-                                            size: 16,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 4,
-                                      left: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius:
-                                              BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          '#${index + 1}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _deleteImage(int index) {
-    if (index >= 0 && index < _capturedImages.length) {
-      setState(() {
-        _capturedImages.removeAt(index);
-      });
-    }
-  }
-
-  void _confirmReset(BuildContext dialogContext) {
-    showDialog(
-      context: dialogContext,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Xác nhận'),
-        content: const Text(
-            'Bạn có chắc chắn muốn xóa tất cả ảnh và chụp lại không?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx); // Close alert
-              Navigator.pop(dialogContext); // Close bottom sheet
-              setState(() {
-                _capturedImages.clear();
-              });
-            },
-            child: const Text('Đồng ý', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1458,11 +1245,6 @@ class _CameraScreenState extends State<CameraScreen>
                     tooltip: "Thông tin",
                   ),
                   IconButton(
-                    icon: const Icon(Icons.restart_alt, color: Colors.white),
-                    onPressed: _resetSession,
-                    tooltip: "Chụp lại từ đầu",
-                  ),
-                  IconButton(
                     key: _settingsButtonKey,
                     icon: Icon(
                       _isSettingsOpen
@@ -1483,7 +1265,8 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   Widget build(BuildContext context) {
-    final double aspectRatio = CameraAspectRatios.getRatio(_aspectRatioIndex);
+    // Locked to 4:3 (3:4 in portrait)
+    const double aspectRatio = 3.0 / 4.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1694,76 +1477,8 @@ class _CameraScreenState extends State<CameraScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Gallery / Review Button
-                      if (!_isFrozen)
-                        GestureDetector(
-                          onTap:
-                              _capturedImages.isNotEmpty ? _openGallery : null,
-                          child: Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF22272B).withOpacity(0.8),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: Colors.white.withOpacity(0.3)),
-                            ),
-                            child: _capturedImages.isNotEmpty
-                                ? Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      // Stack effect
-                                      if (_capturedImages.length > 1)
-                                        Transform.rotate(
-                                          angle: 0.2,
-                                          child: Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              image: DecorationImage(
-                                                image: FileImage(
-                                                    _capturedImages[
-                                                            _capturedImages
-                                                                    .length -
-                                                                2]
-                                                        .file),
-                                                fit: BoxFit.cover,
-                                                opacity: 0.6,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      // Top Image
-                                      Container(
-                                        width: 48,
-                                        height: 48,
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          border: Border.all(
-                                              color: _capturedImages
-                                                      .last.hasWarnings
-                                                  ? Colors.orange
-                                                  : Colors.white,
-                                              width: _capturedImages
-                                                      .last.hasWarnings
-                                                  ? 2.5
-                                                  : 1.5),
-                                          image: DecorationImage(
-                                            image: FileImage(
-                                                _capturedImages.last.file),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Icon(Icons.photo_library_outlined,
-                                    color: Colors.white.withOpacity(0.5)),
-                          ),
-                        ),
+                      // Spacer (Left side)
+                      const SizedBox(width: 56),
 
                       // Capture Button
                       Builder(builder: (context) {
@@ -1853,34 +1568,17 @@ class _CameraScreenState extends State<CameraScreen>
                                   border: Border.all(
                                       color: isCaptureDisabled
                                           ? Colors.grey
-                                          : (_multiFrameMode
-                                              ? Colors.redAccent
-                                              : Colors.white),
+                                          : Colors.white,
                                       width: 4),
                                 ),
                                 child: Container(
                                   margin: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
-                                    shape: (_multiFrameMode &&
-                                            _isMeasuringMultiFrame)
-                                        ? BoxShape.rectangle
-                                        : BoxShape.circle,
-                                    borderRadius: (_multiFrameMode &&
-                                            _isMeasuringMultiFrame)
-                                        ? BorderRadius.circular(8)
-                                        : null,
+                                    shape: BoxShape.circle,
                                     color: isCaptureDisabled
                                         ? Colors.transparent
-                                        : (_multiFrameMode
-                                            ? Colors.redAccent
-                                            : Colors.white),
+                                        : Colors.white,
                                   ),
-                                  // Scale down inner container if "Stop" (Square)
-                                  transform: (_multiFrameMode &&
-                                          _isMeasuringMultiFrame)
-                                      ? Matrix4.diagonal3Values(0.5, 0.5, 1.0)
-                                      : Matrix4.identity(),
-                                  transformAlignment: Alignment.center,
                                 ),
                               ),
                               if (isCaptureDisabled)
@@ -2145,9 +1843,6 @@ class _CameraScreenState extends State<CameraScreen>
             edgeSnapping: _edgeSnapping,
             onEdgeSnappingChanged: (value) =>
                 setState(() => _edgeSnapping = value),
-            multiFrameMode: _multiFrameMode,
-            onMultiFrameModeChanged: (value) =>
-                setState(() => _multiFrameMode = value),
           ),
 
           // 7. K Matrix Overlay (Researcher Mode)

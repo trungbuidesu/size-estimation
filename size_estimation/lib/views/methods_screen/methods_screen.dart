@@ -384,7 +384,30 @@ class _MethodsScreenState extends State<MethodsScreen> {
       return;
     }
 
-    // Check if there are any profiles available
+    // Try to load custom calibration first
+    final customProfile = await _calibrationService.getCustomProfile();
+
+    if (customProfile != null) {
+      // Auto-select custom calibration
+      await _calibrationService.setActiveProfile(customProfile.name);
+      setState(() {
+        _useAdvancedCorrection = true;
+        _selectedProfile = customProfile;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã tải hiệu chỉnh tùy chỉnh (Custom Calibration)'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    // No custom profile, check if there are any other profiles
     final profiles = await _calibrationService.getAllProfiles();
     if (profiles.isEmpty) {
       if (!mounted) return;
@@ -405,7 +428,7 @@ class _MethodsScreenState extends State<MethodsScreen> {
       return;
     }
 
-    // Show profile selection dialog
+    // Show profile selection dialog for other profiles
     await _selectProfile();
   }
 

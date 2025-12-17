@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
-import 'package:image_picker/image_picker.dart';
+
 import 'package:size_estimation/models/calibration_profile.dart';
 import 'package:size_estimation/services/calibration_service.dart';
-import 'package:size_estimation/views/shared_components/index.dart';
+import 'package:size_estimation/views/index.dart';
 import 'package:size_estimation/constants/index.dart';
-import 'multi_capture_camera_screen.dart';
 
 class CalibrationScreen extends StatefulWidget {
   const CalibrationScreen({super.key});
@@ -17,7 +16,6 @@ class CalibrationScreen extends StatefulWidget {
 
 class _CalibrationScreenState extends State<CalibrationScreen> {
   final CalibrationService _calibrationService = CalibrationService();
-  final ImagePicker _picker = ImagePicker();
 
   List<File> _chessboardImages = [];
   bool _isProcessing = false;
@@ -38,34 +36,45 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   String _dictionaryId = 'DICT_4x4_50';
   int _startId = 0;
 
-  Future<void> _pickImages() async {
+  Future<void> _openMultiFrameCapture() async {
     try {
-      final List<XFile> images = await _picker.pickMultiImage();
-      if (images.isNotEmpty) {
+      final List<File>? resultImages = await Navigator.push<List<File>>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MultiFrameCaptureScreen(
+            initialImages: _chessboardImages,
+          ),
+        ),
+      );
+
+      if (resultImages != null) {
         setState(() {
-          _chessboardImages = images.map((xfile) => File(xfile.path)).toList();
+          _chessboardImages = resultImages;
           _errorMessage = null;
         });
       }
     } catch (e) {
+      debugPrint('Error: $e');
       setState(() {
-        _errorMessage = '${AppStrings.errorPickImage}$e';
+        _errorMessage = '${AppStrings.errorCaptureImage}$e';
       });
     }
   }
 
-  Future<void> _captureImages() async {
+  Future<void> _manageImages() async {
     try {
-      final List<File>? selectedImages = await Navigator.push<List<File>>(
+      final List<File>? resultImages = await Navigator.push<List<File>>(
         context,
         MaterialPageRoute(
-          builder: (context) => const MultiCaptureCameraScreen(),
+          builder: (context) => CalibrationImageManager(
+            initialImages: _chessboardImages,
+          ),
         ),
       );
 
-      if (selectedImages != null && selectedImages.isNotEmpty) {
+      if (resultImages != null) {
         setState(() {
-          _chessboardImages.addAll(selectedImages);
+          _chessboardImages = resultImages;
           _errorMessage = null;
         });
       }
@@ -147,45 +156,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   Future<void> _saveProfile() async {
     if (_calibratedProfile == null) return;
 
-    final nameController =
-        TextEditingController(text: _calibratedProfile!.name);
+    // Save as custom calibration (only 1 allowed, overwrite)
+    await _calibrationService.saveProfile(_calibratedProfile!, isCustom: true);
 
-    final result = await CommonAlertDialog.show<bool>(
-      context: context,
-      title: AppStrings.saveProfileTitle,
-      content: TextField(
-        controller: nameController,
-        decoration: const InputDecoration(
-          labelText: AppStrings.profileNameLabel,
-          hintText: AppStrings.profileNameHint,
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã lưu hiệu chỉnh tùy chỉnh (Custom Calibration)'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text(AppStrings.cancel),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(AppStrings.save),
-        ),
-      ],
-    );
-
-    if (result == true) {
-      final updatedProfile = _calibratedProfile!.copyWith(
-        name: nameController.text.trim(),
       );
-
-      await _calibrationService.saveProfile(updatedProfile);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  '${AppStrings.saveProfileSuccess}${updatedProfile.name}"!')),
-        );
-      }
     }
   }
 
@@ -484,16 +465,17 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
                       color: theme.colorScheme.onSurface),
                 ),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.camera_alt),
-                      onPressed: _captureImages,
-                      tooltip: AppStrings.captureTooltip,
+                      tooltip: 'Chụp ảnh',
+                      onPressed: _openMultiFrameCapture,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.photo_library),
-                      onPressed: _pickImages,
-                      tooltip: AppStrings.libraryTooltip,
+                      icon: const Icon(Icons.edit),
+                      tooltip: 'Quản lý',
+                      onPressed: _manageImages,
                     ),
                   ],
                 ),

@@ -2,8 +2,6 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import 'package:size_estimation/models/researcher_config.dart';
-import 'package:size_estimation/constants/translate.dart';
-import 'package:size_estimation/views/camera_screen/animations/index.dart';
 
 class CameraSettingsSidebar extends StatelessWidget {
   final Animation<double> animation;
@@ -42,8 +40,6 @@ class CameraSettingsSidebar extends StatelessWidget {
   final ValueChanged<bool>? onUndistortionChanged;
   final bool? edgeSnapping;
   final ValueChanged<bool>? onEdgeSnappingChanged;
-  final bool? multiFrameMode;
-  final ValueChanged<bool>? onMultiFrameModeChanged;
 
   const CameraSettingsSidebar({
     super.key,
@@ -69,10 +65,8 @@ class CameraSettingsSidebar extends StatelessWidget {
     this.onShowIMU,
     this.applyUndistortion,
     this.onUndistortionChanged,
-    this.edgeSnapping, // Keep one
-    this.onEdgeSnappingChanged, // Keep one
-    this.multiFrameMode,
-    this.onMultiFrameModeChanged,
+    this.edgeSnapping,
+    this.onEdgeSnappingChanged,
   });
 
   @override
@@ -333,63 +327,6 @@ class CameraSettingsSidebar extends StatelessWidget {
                                               onEdgeSnappingChanged!(v);
                                             }, onInfoTap: () {
                                               // TODO: Show info for Edge Snapping
-                                            }),
-                                          if (multiFrameMode != null &&
-                                              onMultiFrameModeChanged != null)
-                                            _buildResearcherSwitch(
-                                                context,
-                                                "Multi-frame Averaging",
-                                                multiFrameMode!, (v) {
-                                              onMultiFrameModeChanged!(v);
-                                            }, onInfoTap: () {
-                                              showDialog(
-                                                context: context,
-                                                builder: (context) =>
-                                                    AlertDialog(
-                                                  title: Text(AppStrings
-                                                      .multiFrameAveragingTitle),
-                                                  content: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      // Animation Placeholder
-                                                      const SizedBox(
-                                                        height: 120,
-                                                        width: 200,
-                                                        child:
-                                                            MultiFrameAnimation(),
-                                                      ),
-                                                      const SizedBox(
-                                                          height: 16),
-                                                      Text(
-                                                        AppStrings
-                                                            .multiFrameAveragingProcess,
-                                                        style: const TextStyle(
-                                                            fontSize: 14),
-                                                      ),
-                                                      const SizedBox(height: 8),
-                                                      Text(
-                                                        AppStrings
-                                                            .multiFrameAveragingBenefit,
-                                                        style: const TextStyle(
-                                                            fontSize: 14,
-                                                            fontWeight:
-                                                                FontWeight
-                                                                    .bold),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  actions: [
-                                                    TextButton(
-                                                      onPressed: () =>
-                                                          Navigator.of(context)
-                                                              .pop(),
-                                                      child: Text(
-                                                          AppStrings.close),
-                                                    ),
-                                                  ],
-                                                ),
-                                              );
                                             }),
                                           const SizedBox(height: 16),
                                           Divider(
