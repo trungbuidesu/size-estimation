@@ -10,7 +10,6 @@ import 'package:size_estimation/models/captured_image.dart';
 import 'package:size_estimation/models/estimation_mode.dart';
 
 import 'package:size_estimation/views/camera_screen/components/index.dart';
-import 'package:size_estimation/views/shared_components/index.dart';
 
 import 'package:size_estimation/constants/index.dart';
 import 'package:size_estimation/models/researcher_config.dart';
@@ -109,6 +108,8 @@ class _CameraScreenState extends State<CameraScreen>
   File? _frozenImageFile; // Use File for captured frozen image
   vm.Vector2? _frozenPointA; // Temp storage for points in frozen mode
   vm.Vector2? _frozenPointB;
+  IMUOrientation? _frozenOrientation;
+  IntrinsicMatrix? _frozenKOut;
 
   // Photogrammetry State
   final List<CapturedImage> _capturedImages = [];
@@ -304,57 +305,12 @@ class _CameraScreenState extends State<CameraScreen>
 
     // Enforce Mode Selection before first capture
     if (_capturedImages.isEmpty && _selectedModeType == null) {
-      /*
-      // User requested to NOT show the selector automatically
-      setState(() {
-        _isModeSelectorVisible = true;
-        // ...
-      });
-      */
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text(AppStrings.selectModeRequired),
         backgroundColor: Colors.orange,
         duration: Duration(seconds: 2),
       ));
       return;
-    }
-
-    // New: Check if measurement points are selected for the active mode
-    // We assume capture is "Start Recording" or "Capture Evidence".
-    // If the user wants to capture the measurement result, they must have measured first.
-    bool measurementReady = true;
-    String missingPointsMsg = "";
-
-    if (_selectedModeType == EstimationModeType.groundPlane) {
-      if (_groundPointA == null || _groundPointB == null) {
-        measurementReady = false;
-        missingPointsMsg = AppStrings.selectPointsGround;
-      }
-    } else if (_selectedModeType == EstimationModeType.planarObject) {
-      // Allow capture even if measurement is null, so user can select on image
-      if (false) {
-        // _currentPlanarMeasurement == null
-        measurementReady = false;
-        missingPointsMsg = AppStrings.selectPointsPlanar;
-      }
-    }
-    // Multi-frame might behave differently (capture to measure?), but usually
-    // user captures frames THEN processing happens.
-    // However, the request implies standard static measurement modes.
-
-    if (!measurementReady) {
-      // Special case for Ground Plane Freeze Mode:
-      // If prompt says "Capture to freeze", we allow capture even if points are null
-      if (_selectedModeType == EstimationModeType.groundPlane && !_isFrozen) {
-        // ALLOW capture to enter freeze mode
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(missingPointsMsg),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 2),
-        ));
-        return;
-      }
     }
 
     // Countdown Logic
@@ -373,22 +329,32 @@ class _CameraScreenState extends State<CameraScreen>
       setState(() => _isCountingDown = false);
     }
 
+    // Freeze Frame Logic (Pause Preview)
+    try {
+      await _controller!.pausePreview();
+      setState(() {
+        _isFrozen = true;
+        _frozenOrientation = _currentOrientation; // Snapshot orientation
+        _frozenKOut = _currentKOut; // Snapshot intrinsics
+      });
+    } catch (e) {
+      _showError('Error freezing preview: $e');
+    }
+  }
+
+  Future<void> _onSaveFrozenImage() async {
     setState(() => _isCapturing = true);
 
     try {
+      // Capture the high-res image
       final xFile = await _controller!.takePicture();
       final file = File(xFile.path);
 
-      if (_groundPlaneMode && !_isFrozen) {
-        setState(() {
-          _isCapturing = false;
-        });
-
+      // 1. Ground Plane Mode
+      if (_groundPlaneMode) {
         if (_currentKOut != null &&
             _currentOrientation != null &&
             _controller!.value.previewSize != null) {
-          // Get actual captured image size (async)
-          // We need to decode the image to get its real dimensions
           final image = await decodeImageFromList(await file.readAsBytes());
           final capturedImageSize = Size(
             image.width.toDouble(),
@@ -405,9 +371,7 @@ class _CameraScreenState extends State<CameraScreen>
                 kOut: _currentKOut!,
                 orientation: _currentOrientation!,
                 cameraHeightMeters: _cameraHeightMeters,
-                originalImageSize:
-                    capturedImageSize, // ← FIXED: Use actual captured size
-                // Pass initial points from live preview
+                originalImageSize: capturedImageSize,
                 initialPointA: _groundPointA,
                 initialPointB: _groundPointB,
                 previewSize: Size(
@@ -421,14 +385,9 @@ class _CameraScreenState extends State<CameraScreen>
         } else {
           _showError("Missing calibration data (K/IMU)");
         }
-        return;
       }
-
-      if (_planarObjectMode) {
-        setState(() {
-          _isCapturing = false;
-        });
-
+      // 2. Planar Object Mode
+      else if (_planarObjectMode) {
         if (_currentKOut != null && _controller!.value.previewSize != null) {
           final image = await decodeImageFromList(await file.readAsBytes());
           final capturedImageSize = Size(
@@ -455,14 +414,9 @@ class _CameraScreenState extends State<CameraScreen>
         } else {
           _showError("Missing calibration data (K)");
         }
-        return;
       }
-
-      if (_verticalObjectMode) {
-        setState(() {
-          _isCapturing = false;
-        });
-
+      // 3. Vertical Object Mode
+      else if (_verticalObjectMode) {
         if (_currentKOut != null &&
             _currentOrientation != null &&
             _controller!.value.previewSize != null) {
@@ -493,20 +447,26 @@ class _CameraScreenState extends State<CameraScreen>
         } else {
           _showError("Missing calibration data (K/IMU)");
         }
-        return;
+      }
+      // 4. Batch/Generic Mode
+      else {
+        List<String> warnings = [];
+        setState(() {
+          _capturedImages.add(CapturedImage(file: file, warnings: warnings));
+          if (_capturedImages.length == 1) {
+            _minZoom = _currentZoom;
+            _maxZoom = _currentZoom;
+          }
+        });
       }
 
-      // Simplified validation to avoid errors
-      List<String> warnings = [];
-
-      setState(() {
-        _capturedImages.add(CapturedImage(file: file, warnings: warnings));
-
-        if (_capturedImages.length == 1) {
-          _minZoom = _currentZoom;
-          _maxZoom = _currentZoom;
-        }
-      });
+      // Reset Frozen State (if we didn't navigate away, or when we come back)
+      if (mounted) {
+        setState(() {
+          _isFrozen = false;
+        });
+        await _controller!.resumePreview();
+      }
     } catch (e) {
       _showError('${AppStrings.captureError}$e');
     } finally {
@@ -908,20 +868,25 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _performGroundPlaneMeasurement(
       vm.Vector2 pointA, vm.Vector2 pointB) async {
+    // Use Frozen State if waiting for capture
+    final effectiveKOut = _isFrozen ? _frozenKOut : _currentKOut;
+    final effectiveOrientation =
+        _isFrozen ? _frozenOrientation : _currentOrientation;
+
     // Check if we have all required data
-    if (_currentKOut == null) {
+    if (effectiveKOut == null) {
       _showError('Camera intrinsics not available');
       return;
     }
 
-    if (_currentOrientation == null) {
+    if (effectiveOrientation == null) {
       _showError('IMU orientation not available');
       return;
     }
 
     // Check if device is level enough
     final service = GroundPlaneService();
-    if (!service.isOrientationSuitable(_currentOrientation!)) {
+    if (!service.isOrientationSuitable(effectiveOrientation)) {
       _showError('Device is too tilted. Please hold device more level.');
       return;
     }
@@ -993,8 +958,8 @@ class _CameraScreenState extends State<CameraScreen>
         return await service.measureDistance(
           imagePointA: p1,
           imagePointB: p2,
-          kOut: _currentKOut!,
-          orientation: _currentOrientation!,
+          kOut: effectiveKOut,
+          orientation: effectiveOrientation,
           cameraHeightMeters: _cameraHeightMeters,
           imageWidth: _controller!.value.previewSize?.width.toInt() ?? 1920,
           imageHeight: _controller!.value.previewSize?.height.toInt() ?? 1080,
@@ -1048,8 +1013,8 @@ class _CameraScreenState extends State<CameraScreen>
             return await service.measureDistance(
               imagePointA: currentP1,
               imagePointB: currentP2,
-              kOut: _currentKOut!,
-              orientation: _currentOrientation!,
+              kOut: effectiveKOut!,
+              orientation: effectiveOrientation!,
               cameraHeightMeters: _cameraHeightMeters,
               imageWidth: _controller!.value.previewSize?.width.toInt() ?? 1920,
               imageHeight:
@@ -1107,8 +1072,12 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _performPlanarObjectMeasurement(List<vm.Vector2> corners) async {
     // Save UI corners for later use
     _planarCorners = List.from(corners);
+
+    // Use Frozen State if waiting for capture
+    final effectiveKOut = _isFrozen ? _frozenKOut : _currentKOut;
+
     // Check if we have required data
-    if (_currentKOut == null) {
+    if (effectiveKOut == null) {
       _showError('Camera intrinsics not available');
       return;
     }
@@ -1123,7 +1092,6 @@ class _CameraScreenState extends State<CameraScreen>
         _controller!.value.previewSize?.height.toDouble() ?? 1080.0;
 
     // Dynamic Scaling Logic for Rotation Support
-    // Check orientation match
     final isUiPortrait = uiWidth < uiHeight;
     final isSensorLandscape = bufferWidth > bufferHeight;
     final needsSwap = isUiPortrait && isSensorLandscape;
@@ -1134,16 +1102,11 @@ class _CameraScreenState extends State<CameraScreen>
 
     if (needsSwap) {
       // Portrait UI, Landscape Sensor (Rotated 90)
-      // Map UI Width (Short) to Sensor Height (Short)
       scale = bufferHeight / uiWidth;
-      // Calculate vertical overflow (in UI coords)
       final renderedHeight = uiWidth * (bufferWidth / bufferHeight);
       yOffset = (renderedHeight - uiHeight) / 2;
     } else {
-      // Landscape UI, Landscape Sensor (Normal)
-      // Map UI Width (Long) to Sensor Width (Long)
-      scale = bufferWidth / uiWidth;
-      // Calculate vertical overflow?
+      // Landscape/Aligned
       // If UI is 4:3 and Sensor 16:9.
       // 16/9 = 1.77. 4/3 = 1.33.
       // Video is wider. Fits height, crops width?
@@ -1198,7 +1161,7 @@ class _CameraScreenState extends State<CameraScreen>
       // Debug camera intrinsics
       debugPrint('=== CAMERA INTRINSICS ===');
       debugPrint(
-          'K matrix: fx=${_currentKOut!.fx}, fy=${_currentKOut!.fy}, cx=${_currentKOut!.cx}, cy=${_currentKOut!.cy}');
+          'K matrix: fx=${effectiveKOut.fx}, fy=${effectiveKOut.fy}, cx=${effectiveKOut.cx}, cy=${effectiveKOut.cy}');
       debugPrint(
           'Refined corners: ${refinedCorners.map((c) => '[${c.x.toStringAsFixed(1)},${c.y.toStringAsFixed(1)}]').join(', ')}');
       debugPrint('Distance: ${_planarDistanceMeters}m');
@@ -1209,7 +1172,7 @@ class _CameraScreenState extends State<CameraScreen>
         try {
           return await service.measureObject(
             corners: refinedCorners,
-            kOut: _currentKOut!, // Use original K matrix matching buffer
+            kOut: effectiveKOut, // Use original K matrix matching buffer
             distanceMeters: _planarDistanceMeters,
             referenceWidthCm: refWidth,
             referenceHeightCm: refHeight,
@@ -1291,12 +1254,17 @@ class _CameraScreenState extends State<CameraScreen>
     _verticalTopPoint = top;
     _verticalBottomPoint = bottom;
 
+    // Use Frozen State if waiting for capture
+    final effectiveKOut = _isFrozen ? _frozenKOut : _currentKOut;
+    final effectiveOrientation =
+        _isFrozen ? _frozenOrientation : _currentOrientation;
+
     // Check requirements
-    if (_currentKOut == null) {
+    if (effectiveKOut == null) {
       _showError('Camera intrinsics not available');
       return;
     }
-    if (_currentOrientation == null) {
+    if (effectiveOrientation == null) {
       _showError('IMU orientation not available');
       return;
     }
@@ -1311,6 +1279,7 @@ class _CameraScreenState extends State<CameraScreen>
         _controller!.value.previewSize?.height.toDouble() ?? 1080.0;
 
     // Dynamic Scaling Logic for Rotation Support
+    // Check orientation match
     final isUiPortrait = uiWidth < uiHeight;
     final isSensorLandscape = bufferWidth > bufferHeight;
     final needsSwap = isUiPortrait && isSensorLandscape;
@@ -1366,7 +1335,7 @@ class _CameraScreenState extends State<CameraScreen>
     final service = VerticalObjectService();
 
     // Vanishing Point Refinement (Advanced Module C)
-    IMUOrientation refinedOrientation = _currentOrientation!;
+    IMUOrientation refinedOrientation = effectiveOrientation;
 
     if (_latestImage != null) {
       final vp =
@@ -1419,7 +1388,7 @@ class _CameraScreenState extends State<CameraScreen>
       final result = await service.measureHeight(
         topPixel: p1,
         bottomPixel: p2,
-        kOut: _currentKOut!,
+        kOut: effectiveKOut!,
         orientation: refinedOrientation, // Use refined orientation!
         cameraHeightMeters: _cameraHeightMeters,
       );
@@ -1469,8 +1438,8 @@ class _CameraScreenState extends State<CameraScreen>
               return await service.measureHeight(
                 topPixel: currentP1,
                 bottomPixel: currentP2,
-                kOut: _currentKOut!,
-                orientation: _currentOrientation!,
+                kOut: effectiveKOut!,
+                orientation: effectiveOrientation!,
                 cameraHeightMeters: _cameraHeightMeters,
               );
             } catch (e) {
@@ -1901,22 +1870,7 @@ class _CameraScreenState extends State<CameraScreen>
                               ),
                               const SizedBox(width: 16),
                               FilledButton.icon(
-                                onPressed: () {
-                                  // Save currently selected points as result
-                                  // Or just capture this as evidence?
-                                  // For now, assume "Done" means save to list
-                                  setState(() {
-                                    _isFrozen = false;
-                                    // Add to captured images list properly
-                                    // But wait, the file is _frozenImageFile
-                                    if (_frozenImageFile != null) {
-                                      _capturedImages.add(CapturedImage(
-                                          file: _frozenImageFile!));
-                                    }
-                                    _frozenImageFile = null;
-                                  });
-                                  _controller!.resumePreview();
-                                },
+                                onPressed: _onSaveFrozenImage,
                                 icon: const Icon(Icons.check),
                                 label: const Text("Lưu"),
                               ),
